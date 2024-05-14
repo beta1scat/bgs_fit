@@ -1,6 +1,7 @@
 import os
 import open3d as o3d
 import numpy as np
+from math import pi, cos, sin, atan
 from spatialmath import SE3, SO3
 
 def gen_cube_side_pick_poses(size, num_each_side):
@@ -53,20 +54,85 @@ def gen_cube_center_pick_poses(center=[0,0,0]):
         pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[3], z=zL[1]), center))
     return pick_poses
 
+def gen_cone_side_pick_poses(height, top_r, bottom_r, num_each_side):
+    pick_poses = []
+    step = 0 if num_each_side == 1 else 2 * pi / num_each_side
+    alpha = atan(abs(top_r - bottom_r) / height)
+    for idx in range(num_each_side):
+        t = idx * step
+        top_x = top_r * cos(t)
+        top_y = top_r * sin(t)
+        top_z = height / 2
+        bottom_x = bottom_r * cos(t)
+        bottom_y = bottom_r * sin(t)
+        bottom_z = -1 * height / 2
+        top_xL = np.array([[top_x, top_y, 0]])
+        top_zL = np.array([[0, 0, -1]])
+        bottom_xL = np.array([[bottom_x, bottom_y, 0]])
+        bottom_zL = np.array([[0, 0, 1]])
+        if top_r > bottom_r:
+            top_T = SE3.Rt(SO3.TwoVectors(x=top_xL, z=top_zL)*SO3.Ry(-alpha), [top_x, top_y, top_z])
+            bottom_T = SE3.Rt(SO3.TwoVectors(x=bottom_xL, z=bottom_zL)*SO3.Ry(alpha), [bottom_x, bottom_y, bottom_z])
+        else:
+            top_T = SE3.Rt(SO3.TwoVectors(x=top_xL, z=top_zL)*SO3.Ry(alpha), [top_x, top_y, top_z])
+            bottom_T = SE3.Rt(SO3.TwoVectors(x=bottom_xL, z=bottom_zL)*SO3.Ry(-alpha), [bottom_x, bottom_y, bottom_z])
+        pick_poses.append(top_T)
+        pick_poses.append(bottom_T)
+    return pick_poses
+
+def gen_cone_center_pick_poses(height, num_each_position, center=[0,0,0]):
+    pick_poses = []
+    step = 0 if num_each_position == 1 else 2 * pi / num_each_position
+    print(step)
+    for idx in range(num_each_position):
+        top_x = 0
+        top_y = 0
+        top_z = height / 2
+        bottom_x = 0
+        bottom_y = 0
+        bottom_z = -1 * height / 2
+        center_xyz = center
+        t = step * idx
+        top_T = SE3.Rt(SO3.Rz(t)*SO3.Rx(pi), [top_x, top_y, top_z])
+        bottom_T = SE3.Rt(SO3.Rz(-t), [bottom_x, bottom_y, bottom_z])
+        center_T1 = SE3.Rt(SO3.Ry(pi/2)*SO3.Rx(t), center)
+        center_T2 = SE3.Rt(SO3.Ry(-pi/2)*SO3.Rx(t), center)
+        pick_poses.append(top_T)
+        pick_poses.append(bottom_T)
+        pick_poses.append(center_T1)
+        pick_poses.append(center_T2)
+    return pick_poses
+
+def test_cube_poses():
+    cube_size = [1.2, 1.0, 0.6]
+    # poses = gen_cube_side_pick_poses(cube_size, 2)
+    poses = gen_cube_center_pick_poses()
+    cube = o3d.geometry.TriangleMesh.create_box(*cube_size)
+    cube.translate(np.asarray(cube_size) / (-2))
+    cube_obb = cube.get_oriented_bounding_box()
+    cube_obb.color = [1,0,0]
+    scene = []
+    origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
+    scene.append(cube_obb)
+    # scene.append(origin)
+    for pose in poses:
+        coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
+        coord.transform(pose)
+        scene.append(coord)
+    o3d.visualization.draw_geometries(scene)
+
+def test_cone_poses():
+    height, top_r, bottom_r = [1.2, 1.0, 1.6]
+    # poses = gen_cone_side_pick_poses(height, top_r, bottom_r, 100)
+    poses = gen_cone_center_pick_poses(height, 10)
+    scene = []
+    origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
+    # scene.append(origin)
+    for pose in poses:
+        coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
+        coord.transform(pose)
+        scene.append(coord)
+    o3d.visualization.draw_geometries(scene)
+
 model_path = "../../data/outputs"
-cube_size = [1.2, 1.0, 0.6]
-# poses = gen_cube_side_pick_poses(cube_size, 2)
-poses = gen_cube_center_pick_poses()
-cube = o3d.geometry.TriangleMesh.create_box(*cube_size)
-cube.translate(np.asarray(cube_size) / (-2))
-cube_obb = cube.get_oriented_bounding_box()
-cube_obb.color = [1,0,0]
-scene = []
-origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
-scene.append(cube_obb)
-# scene.append(origin)
-for pose in poses:
-    coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
-    coord.transform(pose)
-    scene.append(coord)
-o3d.visualization.draw_geometries(scene)
+test_cone_poses()
