@@ -103,6 +103,27 @@ def gen_cone_center_pick_poses(height, num_each_position, center=[0,0,0]):
         pick_poses.append(center_T2)
     return pick_poses
 
+
+def gen_ellipsoid_center_pick_poses(num_each_direction, center=[0,0,0]):
+    pick_poses = []
+    step = 0 if num_each_direction == 1 else 2 * pi / num_each_direction
+    print(step)
+    for idx in range(num_each_direction):
+        t = step * idx
+        T1 = SE3.Rt(SO3.Rz(t), center)
+        T2 = SE3.Rt(SO3.Rx(pi)*SO3.Rz(t), center)
+        T3 = SE3.Rt(SO3.Ry(pi/2)*SO3.Rz(t), center)
+        T4 = SE3.Rt(SO3.Ry(pi/2)*SO3.Rx(pi)*SO3.Rz(t), center)
+        T5 = SE3.Rt(SO3.Rx(pi/2)*SO3.Rz(t), center)
+        T6 = SE3.Rt(SO3.Rx(pi/2)*SO3.Rx(pi)*SO3.Rz(t), center)
+        pick_poses.append(T1)
+        pick_poses.append(T2)
+        pick_poses.append(T3)
+        pick_poses.append(T4)
+        pick_poses.append(T5)
+        pick_poses.append(T6)
+    return pick_poses
+
 def test_cube_poses():
     cube_size = [1.2, 1.0, 0.6]
     # poses = gen_cube_side_pick_poses(cube_size, 2)
@@ -134,5 +155,16 @@ def test_cone_poses():
         scene.append(coord)
     o3d.visualization.draw_geometries(scene)
 
+def test_ellipsoid_poses():
+    poses = gen_ellipsoid_center_pick_poses(10,[0.5,0.5,0.5])
+    scene = []
+    origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
+    scene.append(origin)
+    for pose in poses:
+        coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
+        coord.transform(pose)
+        scene.append(coord)
+    o3d.visualization.draw_geometries(scene)
+
 model_path = "../../data/outputs"
-test_cone_poses()
+test_ellipsoid_poses()
