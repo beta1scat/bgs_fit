@@ -125,9 +125,6 @@ class MinimalSubscriber(Node):
     def pointsListener_callback(self, msg):
         self.get_logger().info('I heard header: "%s"' % msg.header)
         pc = pc2.read_points(msg, skip_nans=True, field_names=("x", "y", "z"))
-        # print("234234444444444444444==========")
-        # print(type(pc))
-        # pc_l = list(pc)
         points_file_path = "/root/ws_host/src/points.ply"  # Change this to your desired path
         save_pointcloud_to_ply(pc, points_file_path)
         self.get_logger().info("Points info saved to %s" % points_file_path)

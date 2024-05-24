@@ -17,16 +17,18 @@ from groundingdino.util.utils import clean_state_dict, get_phrases_from_posmap
 # segment anything
 from segment_anything import (
     build_sam,
-    build_sam_hq,
+    # build_sam_hq,
     SamPredictor
 )
 import cv2
 import matplotlib.pyplot as plt
 
 # Recognize Anything Model & Tag2Text
-from ram.models import ram
+from ram.models import ram, ram_plus
 from ram import inference_ram
 import torchvision.transforms as TS
+
+import time
 
 def load_image(image_path):
     # load image
@@ -133,13 +135,15 @@ def save_mask_data(output_dir, tags_chinese, mask_list, box_list, label_list):
     with open(os.path.join(output_dir, 'label.json'), 'w') as f:
         json.dump(json_data, f)
 
+start_time = time.time()
 
-image_path = "../../data/1/image.png"
+image_path = "../../data/7/image.png"
 config_file = "../../data/models/GroundingDINO_SwinT_OGC.py"
 grounded_checkpoint = "../../data/models/groundingdino_swint_ogc.pth"
 ram_checkpoint = "../../data/models/ram_swin_large_14m.pth"
 sam_checkpoint = "../../data/models/sam_vit_h_4b8939.pth"
-device = "cpu"
+device_cuda = "cuda"
+device_cpu = "cpu"
 output_dir = "../../data/outputs"
 box_threshold = 0.25
 text_threshold = 0.2
@@ -148,7 +152,6 @@ iou_threshold = 0.5
 os.makedirs(output_dir, exist_ok=True)
 
 image_pil, image = load_image(image_path)
-model = load_model(config_file, grounded_checkpoint, device=device)
 image_pil.save(os.path.join(output_dir, "raw_image.jpg"))
 normalize = TS.Normalize(mean=[0.485, 0.456, 0.406],
                           std=[0.229, 0.224, 0.225])
@@ -156,11 +159,14 @@ transform = TS.Compose([
                 TS.Resize((384, 384)),
                 TS.ToTensor(), normalize
             ])
+print("RAM 开始加载")
 ram_model = ram(pretrained=ram_checkpoint, image_size=384, vit='swin_l')
 ram_model.eval()
-ram_model = ram_model.to(device)
+ram_model = ram_model.to(device_cpu)
+ram_load_time = time.time()
+print("RAM 加载时间：", ram_load_time - start_time, "秒")
 raw_image = image_pil.resize((384, 384))
-raw_image  = transform(raw_image).unsqueeze(0).to(device)
+raw_image  = transform(raw_image).unsqueeze(0).to(device_cpu)
 
 # run ram model
 res = inference_ram(raw_image , ram_model)
@@ -168,14 +174,24 @@ tags=res[0].replace(' |', ',')
 tags_chinese=res[1].replace(' |', ',')
 print("Image Tags: ", res[0])
 print("图像标签: ", res[1])
-
+ram_time = time.time()
+print("RAM 执行时间：", ram_time - ram_load_time, "秒")
 # run grounding dino model
+model = load_model(config_file, grounded_checkpoint, device=device_cpu)
+dino_load_time = time.time()
+print("DINO 加载时间：", dino_load_time - ram_time, "秒")
 boxes_filt, scores, pred_phrases = get_grounding_output(
-    model, image, tags, box_threshold, text_threshold, device=device
+    model, image, tags, box_threshold, text_threshold, device=device_cpu
 )
 
+dino_time = time.time()
+print("DINO 执行时间：", dino_time - dino_load_time, "秒")
+
 # initialize SAM
-predictor = SamPredictor(build_sam(checkpoint=sam_checkpoint).to(device))
+predictor = SamPredictor(build_sam(checkpoint=sam_checkpoint).to(device_cpu))
+
+sam_load_time = time.time()
+print("SAM 加载时间：", sam_load_time - dino_time, "秒")
 image = cv2.imread(image_path)
 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 predictor.set_image(image)
@@ -198,14 +214,19 @@ print(f"After NMS: {boxes_filt.shape[0]} boxes")
 # tags_chinese = check_tags_chinese(tags_chinese, pred_phrases)
 print(f"Revise tags_chinese with number: {tags_chinese}")
 
-transformed_boxes = predictor.transform.apply_boxes_torch(boxes_filt, image.shape[:2]).to(device)
+transformed_boxes = predictor.transform.apply_boxes_torch(boxes_filt, image.shape[:2]).to(device_cpu)
 
+box_time = time.time()
+print("BOX 执行时间：", box_time - dino_time, "秒")
 masks, _, _ = predictor.predict_torch(
     point_coords = None,
     point_labels = None,
-    boxes = transformed_boxes.to(device),
+    boxes = transformed_boxes.to(device_cpu),
     multimask_output = False,
 )
+
+sam_time = time.time()
+print("SAM 执行时间：", sam_time - box_time, "秒")
 # draw output image
 plt.figure(figsize=(10, 10))
 plt.imshow(image)

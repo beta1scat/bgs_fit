@@ -9,7 +9,6 @@ def gen_cube_side_pick_poses(size, num_each_side):
     half_size = np.asarray(size) / 2
     for idx in range(3):
         idx1, idx2 = [i for i in range(3) if i != idx]
-        print(f"index: {idx1}, {idx2}")
         tL = np.array([[half_size[0], half_size[1], half_size[2]]]*4*num_each_side)
         combinations = [(i, j) for i in range(2) for j in range(2)]
         for idx_t in range(4):
@@ -126,8 +125,9 @@ def gen_ellipsoid_center_pick_poses(num_each_direction, center=[0,0,0]):
 
 def test_cube_poses():
     cube_size = [1.2, 1.0, 0.6]
-    # poses = gen_cube_side_pick_poses(cube_size, 2)
-    poses = gen_cube_center_pick_poses()
+    poses1 = gen_cube_side_pick_poses(cube_size, 2)
+    poses2 = gen_cube_center_pick_poses()
+    poses = poses1 + poses2
     cube = o3d.geometry.TriangleMesh.create_box(*cube_size)
     cube.translate(np.asarray(cube_size) / (-2))
     cube_obb = cube.get_oriented_bounding_box()
@@ -144,8 +144,9 @@ def test_cube_poses():
 
 def test_cone_poses():
     height, top_r, bottom_r = [1.2, 1.0, 1.6]
-    # poses = gen_cone_side_pick_poses(height, top_r, bottom_r, 100)
-    poses = gen_cone_center_pick_poses(height, 10)
+    poses1 = gen_cone_side_pick_poses(height, top_r, bottom_r, 100)
+    poses2 = gen_cone_center_pick_poses(height, 10)
+    poses = poses1 + poses2
     scene = []
     origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
     # scene.append(origin)
@@ -166,5 +167,8 @@ def test_ellipsoid_poses():
         scene.append(coord)
     o3d.visualization.draw_geometries(scene)
 
-model_path = "../../data/outputs"
-test_ellipsoid_poses()
+if __name__ == "__main__":
+    model_path = "../../data/outputs"
+    test_cube_poses()
+    test_cone_poses()
+    test_ellipsoid_poses()

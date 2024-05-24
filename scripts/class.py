@@ -69,22 +69,39 @@ def show_box(box, ax, label):
     ax.text(x0, y0, label)
 
 # camera intrisic parameters
-fx = 517.2365030025323
-fy = 517.2365030025323
-cx = 160.5
-cy = 120.5
-tx = -36.20655521017727
+# fx = 517.2365030025323
+# fy = 517.2365030025323
+# cx = 160.5
+# cy = 120.5
+# tx = -36.20655521017727
+# ty = 0
+
+fx = 2327.564263511396
+fy = 2327.564263511396
+cx = 720.5
+cy = 540.5
+tx = -162.92949844579772
 ty = 0
 
-classDict = {0: "cube", 1: "hollow_cube", 2: "cone", 3:"hollow_cone", 4: "ellipsoid"}
+classDict = {0: "cube", 1: "cone", 2: "ellipsoid"}
 maskFile = "../../data/outputs/label.json"
 with open(maskFile) as f:
     masksData = json.load(f)
 
-depth_image = cv2.imread('../../data/1/depth.tiff', cv2.IMREAD_UNCHANGED)
+depth_image = cv2.imread('../../data/7/depth.tiff', cv2.IMREAD_UNCHANGED)
 print(type(depth_image))
 labels = []
 boxes_filt = []
+
+modelType = "pointnet2_cls_ssg"
+num_class = 3
+use_normals = True
+model = importlib.import_module(modelType)
+classifier = model.get_model(num_class, normal_channel=use_normals)
+# classifier = classifier.cuda()
+checkpoint = torch.load('../../data/models/best_model_ssg.pth')
+classifier.load_state_dict(checkpoint['model_state_dict'])
+classifier.eval()
 for mask in masksData['mask']:
     if mask['value'] == 0:
         continue
@@ -96,26 +113,20 @@ for mask in masksData['mask']:
 
     # Convert depth image to point cloud
     pointcloud = depth_to_pointcloud(masked_depth_image, fx, fy, cx, cy)
+    print(f"点数：{len(pointcloud)}")
     pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(pointcloud)
-    pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamKNN(10))
-    if len(np.asarray(pcd.points)) > 1024:
-        pcd = pcd.farthest_point_down_sample(1024)
-    pcd.points = o3d.utility.Vector3dVector(pc_normalize(pcd.points))
-    camera = [0,0,800]
+    # pcd.points = o3d.utility.Vector3dVector(pointcloud)
+    pcd.points = o3d.utility.Vector3dVector(pc_normalize(pointcloud))
+    pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamKNN(100))
+    camera = [0,0,-800]
     pcd.orient_normals_towards_camera_location(camera)
+    o3d.io.write_point_cloud("../../data/outputs/"+str(mask['value'])+".ply", pcd)
+    if len(np.asarray(pcd.points)) > 2000:
+        pcd = pcd.farthest_point_down_sample(2000)
+    o3d.visualization.draw_geometries([pcd], point_show_normal=True)
     # pcd = o3d.io.read_point_cloud("/home/niu/Downloads/BGSPCD/ellipsoid/ellipsoid_0006.ply")
     # pointcloud = np.asarray(pcd.points)
     print(pointcloud.shape)
-    modelType = "pointnet2_cls_ssg"
-    num_class = 5
-    use_normals = True
-    model = importlib.import_module(modelType)
-    classifier = model.get_model(num_class, normal_channel=use_normals)
-    # classifier = classifier.cuda()
-    checkpoint = torch.load('../../data/models/best_model.pth')
-    classifier.load_state_dict(checkpoint['model_state_dict'])
-    classifier.eval()
     # pointcloudSampled = farthest_point_sample(pointcloud, 1024)
     # pointsNp = np.array([pc_normalize(pointcloudSampled).T])
     # pointsNp = pc_normalize(pointcloud).T
@@ -142,7 +153,7 @@ for mask in masksData['mask']:
     print(pred_choice)
 print(labels)
 print(boxes_filt)
-image_path = "../../data/1/image.png"
+image_path = "../../data/7/image.png"
 output_dir = "../../data/outputs"
 image = cv2.imread(image_path)
 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
