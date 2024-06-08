@@ -32,7 +32,8 @@ def pc_normalize(pc):
 sam_model_type = "vit_h"  # or vit_b, vit_l based on the model you have
 sam_checkpoint_path = "../../data/models/sam_vit_h_4b8939.pth"  # 替换为你的模型路径
 sam = sam_model_registry[sam_model_type](checkpoint=sam_checkpoint_path)
-sam.to("cpu")
+sam = sam.to(device = "cuda")
+# sam.to(device = "cpu")
 predictor = SamPredictor(sam)
 
 classifier_model_type = "pointnet2_cls_ssg"
@@ -40,17 +41,18 @@ num_class = 3
 use_normals = True
 model = importlib.import_module(classifier_model_type)
 classifier = model.get_model(num_class, normal_channel=use_normals)
-# classifier = classifier.cuda()
+classifier = classifier.cuda()
 classifier_checkpoint_path = '../../data/models/best_model_ssg.pth'
 classifier_checkpoint = torch.load(classifier_checkpoint_path)
 classifier.load_state_dict(classifier_checkpoint['model_state_dict'])
 classifier.eval()
 
 # 读取图片 & 深度图
-image_path = "../../image.png"  # 替换为你的图片路径
-depth_image_path = '../../depth.tiff'
+image_path = "../../data/image.png"  # 替换为你的图片路径
+depth_image_path = '../../data/depth.tiff'
 
 image = cv2.imread(image_path)
+print(f"image size: {image.shape}")
 image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
 depth_image = cv2.imread(depth_image_path, cv2.IMREAD_UNCHANGED)
@@ -66,9 +68,11 @@ if roi == (0, 0, 0, 0):
 # 解析 ROI
 x, y, w, h = roi
 input_box = np.array([x, y, x + w, y + h])
-
+print(input_box)
 # 使用框提示进行分割
 predictor.set_image(image_rgb)
+input_point = np.array([[x+w/2, y+h/2]])
+input_label = np.array([0])
 masks, scores, logits = predictor.predict(
     box=input_box[None, :],  # 需要增加一个维度来匹配输入形状
     multimask_output=False  # 如果为 True，将返回多个可能的分割结果
@@ -130,6 +134,7 @@ points = torch.from_numpy(np.asarray(pcd_normalized.points))
 normals = torch.from_numpy(np.asarray(pcd_normalized.normals))
 ptsWithN = torch.cat((points, normals), dim=1)
 ptsWithNT = torch.unsqueeze(ptsWithN.permute(1, 0), 0)
+ptsWithNT = ptsWithNT.cuda()
 # print(pointsNp)
 print(points.shape)
 print(normals.shape)
@@ -138,7 +143,7 @@ print(ptsWithNT.shape)
 print(ptsWithNT)
 print("========")
 vote_num = 1
-vote_pool = torch.zeros(1, num_class)
+vote_pool = torch.zeros(1, num_class).cuda()
 pred, _ = classifier(ptsWithNT.float())
 vote_pool += pred
 pred = vote_pool / vote_num

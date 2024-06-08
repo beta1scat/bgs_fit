@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'fit = bgs_fit.fit:main',
+            'getPoses = bgs_fit.getPoses:main',
         ],
     },
 )
