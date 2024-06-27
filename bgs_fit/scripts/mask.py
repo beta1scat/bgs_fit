@@ -137,7 +137,7 @@ def save_mask_data(output_dir, tags_chinese, mask_list, box_list, label_list):
 
 start_time = time.time()
 
-image_path = "../../data/7/image.png"
+image_path = "../../data/image.png"
 config_file = "../../data/models/GroundingDINO_SwinT_OGC.py"
 grounded_checkpoint = "../../data/models/groundingdino_swint_ogc.pth"
 ram_checkpoint = "../../data/models/ram_swin_large_14m.pth"

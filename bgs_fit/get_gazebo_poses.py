@@ -20,10 +20,10 @@ class GazeboModelState(Node):
 
         while not self.get_model_list_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('Service /get_model_list not available, waiting again...')
-        
+
         while not self.get_entity_state_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('Service /ros2_grasp/get_entity_state not available, waiting again...')
-        
+
         self.get_model_list()
 
     def get_model_list(self):

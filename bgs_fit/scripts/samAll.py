@@ -149,7 +149,7 @@ plt.show()
 # print(pred)
 # print(pred_choice)
 
-# a,b,c,T_cube = fit_cube_obb(pcd)
+# a,b,c,T_cube = fit_cuboid_obb(pcd)
 # print(a)
 # print(b)
 # print(c)

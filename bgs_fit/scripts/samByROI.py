@@ -48,8 +48,8 @@ classifier.load_state_dict(classifier_checkpoint['model_state_dict'])
 classifier.eval()
 
 # 读取图片 & 深度图
-image_path = "../../data/image.png"  # 替换为你的图片路径
-depth_image_path = '../../data/depth.tiff'
+image_path = "../../data/0003/image.png"  # 替换为你的图片路径
+depth_image_path = '../../data/0003/depth.tiff'
 
 image = cv2.imread(image_path)
 print(f"image size: {image.shape}")
@@ -57,18 +57,33 @@ image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
 depth_image = cv2.imread(depth_image_path, cv2.IMREAD_UNCHANGED)
 
-# 使用 OpenCV 的 selectROI 函数选择矩形框
-roi = cv2.selectROI("Image", image, fromCenter=False, showCrosshair=True)
-cv2.destroyAllWindows()
+# 缩小图像
+scale_factor = 0.5  # 缩小比例
+small_image = cv2.resize(image, (0, 0), fx=scale_factor, fy=scale_factor)
+
+# 使用 selectROI 在缩小后的图像上选择 ROI
+roi = cv2.selectROI('Select ROI', small_image)
+cv2.destroyWindow('Select ROI')
 
 if roi == (0, 0, 0, 0):
     print("No box was drawn.")
     exit()
-
-# 解析 ROI
+# 获取缩小后选择的 ROI 坐标
 x, y, w, h = roi
+
+# 将 ROI 坐标转换回原始图像的坐标
+x = int(x / scale_factor)
+y = int(y / scale_factor)
+w = int(w / scale_factor)
+h = int(h / scale_factor)
+print(roi)
 input_box = np.array([x, y, x + w, y + h])
 print(input_box)
+print(len(input_box))
+print(input_box[0])
+print(input_box[1])
+print(input_box[2])
+print(input_box[3])
 # 使用框提示进行分割
 predictor.set_image(image_rgb)
 input_point = np.array([[x+w/2, y+h/2]])
@@ -90,8 +105,8 @@ plt.figure(figsize=(10, 10))
 plt.subplot(1, 3, 1)
 plt.imshow(image_rgb)
 plt.gca().add_patch(plt.Rectangle((input_box[0], input_box[1]),
-                                  input_box[2] - input_box[0], input_box[3] - input_box[1],
-                                  edgecolor='red', facecolor='none', lw=2))
+                                input_box[2] - input_box[0], input_box[3] - input_box[1],
+                                edgecolor='red', facecolor='none', lw=2))
 plt.title("Original Image with Box")
 
 plt.subplot(1, 3, 2)
@@ -120,9 +135,9 @@ pcd_normalized = o3d.geometry.PointCloud()
 pts_normalized, normalized_scalse = pc_normalize(pointcloud)
 pcd_normalized.points = o3d.utility.Vector3dVector(pts_normalized)
 pcd_normalized.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamKNN(100))
-camera = [0,0,-800]
+camera = [0,0,800]
 pcd_normalized.orient_normals_towards_camera_location(camera)
-# o3d.io.write_point_cloud("../../data/outputs/"+str(mask['value'])+".ply", pcd)
+# o3d.io.write_point_cloud("../../data/outputs/"+"test.ply", pcd)
 if len(np.asarray(pcd_normalized.points)) > 2000:
     pcd_normalized = pcd_normalized.farthest_point_down_sample(2000)
 # o3d.visualization.draw_geometries([pcd], point_show_normal=True)
@@ -151,16 +166,21 @@ pred_choice = pred.data.max(1)[1]
 print(pred)
 print(pred_choice)
 
-a,b,c,T_cube = fit_cube_obb(pcd)
-print(a)
-print(b)
-print(c)
-print(T_cube)
-poses = gen_cube_side_pick_poses([a*2,b*2,c*2], 1)
+pcd = pcd.farthest_point_down_sample(5000)
+r1, r2, height, T = fit_frustum_cone_ransac(pcd)
+fit_cone_points = generate_cone_points(r_bottom=r2, r_top_ratio=r1/r2, height=height, delta=0.0, points_density=0, total_points=5000)
+fit_cone_pcd = o3d.geometry.PointCloud()
+fit_cone_pcd.points = o3d.utility.Vector3dVector(fit_cone_points)
+fit_cone_pcd.paint_uniform_color([0, 0, 1])
+fit_cone_pcd.transform(T)
+coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
+coord_frame.transform(T)
+o3d.visualization.draw_geometries([fit_cone_pcd, pcd, coord_frame], point_show_normal=False)
+poses = gen_cone_side_pick_poses(height, r1, r2, 100)
 poses_file_path = "../../poses.txt"
 with open(poses_file_path, 'w+') as file:
     for matrix in poses:
-        mat = T_cube * matrix * SE3.Rz(pi/2) # For gripper
+        mat = T * matrix * SE3.Rz(pi/2) # For gripper
         cos_theta = np.dot(mat.a, np.array([0,0,1]))
         angle_rad = np.arccos(np.clip(cos_theta, -1.0, 1.0))
         if angle_rad < pi / 4:
@@ -169,3 +189,25 @@ with open(poses_file_path, 'w+') as file:
                     file.write(str(element))
                     file.write(" ")
             file.write('\n')
+
+
+
+
+# a,b,c,T_cube = fit_cuboid_obb(pcd)
+# print(a)
+# print(b)
+# print(c)
+# print(T_cube)
+# poses = gen_cube_side_pick_poses([a*2,b*2,c*2], 1)
+# poses_file_path = "../../poses.txt"
+# with open(poses_file_path, 'w+') as file:
+#     for matrix in poses:
+#         mat = T_cube * matrix * SE3.Rz(pi/2) # For gripper
+#         cos_theta = np.dot(mat.a, np.array([0,0,1]))
+#         angle_rad = np.arccos(np.clip(cos_theta, -1.0, 1.0))
+#         if angle_rad < pi / 4:
+#             for row in mat.A:
+#                 for element in row:
+#                     file.write(str(element))
+#                     file.write(" ")
+#             file.write('\n')

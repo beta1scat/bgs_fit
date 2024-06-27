@@ -20,8 +20,9 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'fit = bgs_fit.fit:main',
-            'getPoses = bgs_fit.getPoses:main',
+            'vision_save = bgs_fit.vision_save:main',
+            'shape_fit = bgs_fit.shape_fit:main',
+            'get_gazebo_poses = bgs_fit.get_gazebo_poses:main',
         ],
     },
 )

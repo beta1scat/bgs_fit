@@ -88,7 +88,7 @@ maskFile = "../../data/outputs/label.json"
 with open(maskFile) as f:
     masksData = json.load(f)
 
-depth_image = cv2.imread('../../data/7/depth.tiff', cv2.IMREAD_UNCHANGED)
+depth_image = cv2.imread('../../data/depth.tiff', cv2.IMREAD_UNCHANGED)
 print(type(depth_image))
 labels = []
 boxes_filt = []
@@ -153,7 +153,7 @@ for mask in masksData['mask']:
     print(pred_choice)
 print(labels)
 print(boxes_filt)
-image_path = "../../data/7/image.png"
+image_path = "../../data/image.png"
 output_dir = "../../data/outputs"
 image = cv2.imread(image_path)
 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
