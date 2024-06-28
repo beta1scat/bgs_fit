@@ -4,8 +4,11 @@ import numpy as np
 from spatialmath import SO3, SE3
 from sklearn import linear_model
 from sklearn.cluster import KMeans
-from utils import *
-from generatePickPoses import *
+# For ROS2
+from .utils import *
+from .generatePickPoses import *
+# from utils import *
+# from generatePickPoses import *
 
 def fit_cuboid_obb(pcd):
     '''
@@ -152,8 +155,18 @@ def fit_frustum_cone_normal(pcd):
     r1, r2, height, center = fit_frustum_cone_by_slice(points, 30)
     return r1, r2, height, SE3(R) * SE3(center)
 
+def fit_ellipsoid(pcd):
+    points, m, centroid = pc_normalize(np.asarray(pcd.points))
+    num_points = len(points)
+    ellipsoid_model = EllipsoidLeastSquaresModel()
+    best_fit, _ = ransac(points, ellipsoid_model, 10, 200, 0.02, num_points*0.2, inliers_ratio=0.8, debug=False, return_all=True)
+    x0t, y0t, z0t, a, b, c, R = ellipsoid_model.get_ellipsoid_params(best_fit)
+    center = np.array([x0t, y0t, z0t]) * m + centroid
+    return a*m, b*m, c*m, SE3.Rt(SO3(np.array(R, dtype=np.float64)), center)
+
 if __name__ == "__main__":
-    point_cloud = o3d.io.read_point_cloud("../../data/outputs/test.ply")
+    test = 2 # 0: cube, 1: cone, 2: ellipsoid
+    point_cloud = o3d.io.read_point_cloud("../../../data/outputs/test2.ply")
     point_cloud.estimate_normals()
     camera = [0,0,800]
     point_cloud.orient_normals_towards_camera_location(camera)
@@ -162,22 +175,41 @@ if __name__ == "__main__":
     else:
         pcd = point_cloud
     o3d.visualization.draw_geometries([pcd], point_show_normal=True)
-
-    r1, r2, height, T = fit_frustum_cone_normal(pcd)
-    poses_geo = []
-    poses1 = gen_cone_side_pick_poses(height, r1, r2, 100)
-    poses2 = gen_cone_center_pick_poses(height, 10)
-    poses = poses1 + poses2
-    for pose in poses:
-        coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.02, origin=[0, 0, 0])
-        coord.transform(T*pose)
-        poses_geo.append(coord)
-    fit_cone_points = generate_cone_points(r_bottom=r2, r_top_ratio=r1/r2, height=height, delta=0.0, points_density=0, total_points=5000)
-    fit_cone_pcd = o3d.geometry.PointCloud()
-    fit_cone_pcd.points = o3d.utility.Vector3dVector(fit_cone_points)
-    fit_cone_pcd.paint_uniform_color([0, 0, 1])
-    fit_cone_pcd.transform(T)
-    coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
-    coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
-    coord_frame.transform(T)
-    o3d.visualization.draw_geometries([*poses_geo, fit_cone_pcd, point_cloud, coord_frame, coord_frame_origin], point_show_normal=False)
+    if test == 0:
+        pass
+    elif test == 1:
+        r1, r2, height, T = fit_frustum_cone_normal(pcd)
+        poses_geo = []
+        poses1 = gen_cone_side_pick_poses(height, r1, r2, 100)
+        poses2 = gen_cone_center_pick_poses(height, 10)
+        poses = poses1 + poses2
+        for pose in poses:
+            coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.02, origin=[0, 0, 0])
+            coord.transform(T*pose)
+            poses_geo.append(coord)
+        fit_cone_points = generate_cone_points(r_bottom=r2, r_top_ratio=r1/r2, height=height, delta=0.0, points_density=0, total_points=5000)
+        fit_cone_pcd = o3d.geometry.PointCloud()
+        fit_cone_pcd.points = o3d.utility.Vector3dVector(fit_cone_points)
+        fit_cone_pcd.paint_uniform_color([0, 0, 1])
+        fit_cone_pcd.transform(T)
+        coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
+        coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
+        coord_frame.transform(T)
+        o3d.visualization.draw_geometries([*poses_geo, fit_cone_pcd, point_cloud, coord_frame, coord_frame_origin], point_show_normal=False)
+    elif test == 2:
+        a, b, c, T = fit_ellipsoid(pcd)
+        poses_geo = []
+        poses = gen_ellipsoid_center_pick_poses(10, [0, 0, 0])
+        for pose in poses:
+            coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.02, origin=[0, 0, 0])
+            coord.transform(T*pose)
+            poses_geo.append(coord)
+        fit_ellipsoid_points = generate_ellipsoid_points(a, b, c, total_points=5000)
+        fit_ellipsoid_pcd = o3d.geometry.PointCloud()
+        fit_ellipsoid_pcd.points = o3d.utility.Vector3dVector(fit_ellipsoid_points)
+        fit_ellipsoid_pcd.paint_uniform_color([0, 0, 1])
+        fit_ellipsoid_pcd.transform(T)
+        coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
+        coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
+        coord_frame.transform(T)
+        o3d.visualization.draw_geometries([*poses_geo, fit_ellipsoid_pcd, point_cloud, coord_frame, coord_frame_origin], point_show_normal=False)

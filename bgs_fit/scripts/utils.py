@@ -3,6 +3,14 @@ import sympy as sp
 import scipy
 
 np.set_printoptions(suppress=True)
+
+def pc_normalize(pc):
+    centroid = np.mean(pc, axis=0)
+    pc = pc - centroid
+    m = np.max(np.sqrt(np.sum(pc**2, axis=1)))
+    pc = pc / m
+    return pc, m, centroid
+
 def generate_cone_points(r_bottom=10, r_top_ratio=0.5, height=20, delta=0.1, points_density=1, total_points=10000):
     assert r_bottom > 0, "cone r_top should > 0"
     assert height > 0, "cone height should > 0"
@@ -31,6 +39,18 @@ def generate_cone_points(r_bottom=10, r_top_ratio=0.5, height=20, delta=0.1, poi
         y = r * np.sin(phi)
         points.append([x + np.random.uniform(-1, 1) * delta, y + np.random.uniform(-1, 1) * delta, z + np.random.uniform(-1, 1) * delta])
     return np.array(points)
+
+def generate_ellipsoid_points(a=10, b=10, c=10, total_points=10000):
+    # 生成椭球体的点云
+    # 椭球的参数方程：x = a*sin(t)*cos(p), y = b*sin(t)*sin(p), z = c*cos(t)
+    # 椭球体面积估算方式：S = 4π(abc)^(2/3)
+    theta = np.pi * np.random.rand(total_points)
+    phi = 2 * np.pi * np.random.rand(total_points)
+    x = a * np.sin(theta) * np.cos(phi)
+    y = b * np.sin(theta) * np.sin(phi)
+    z = c * np.cos(theta)
+    points = np.column_stack((x, y, z))
+    return points
 
 def ransac(data, model, n, k, t, d, inliers_ratio=0.5, debug=False, return_all=False):
     """
@@ -194,12 +214,7 @@ class EllipsoidLeastSquaresModel:
         for x in data:
             A.append([x[0]**2, x[1]**2, x[2]**2, x[0] * x[1], x[0] * x[2], x[1] * x[2], x[0], x[1], x[2], 1])
         B = np.zeros(data.shape[0])
-        start_time = time.time()  # Record start time
-        print(f"B.shape: {B.shape}")
         U, S, V = scipy.linalg.svd(A)
-        end_time = time.time()  # Record end time
-        elapsed_time = end_time - start_time  # Calculate elapsed time
-        print(f"SVD time: {elapsed_time} seconds")
         model = V[-1]
         if self.get_ellipsoid_params(model) is None:
             return None
@@ -220,7 +235,9 @@ class EllipsoidLeastSquaresModel:
                         [e/2, f/2, c]])
         eigenvalues = sorted(A0.eigenvals())
         eigenvectors = sorted(A0.eigenvects(), key=lambda x: abs(x[0]))
-        R = eigenvectors[0][2][0].T.row_insert(0, eigenvectors[1][2][0].T).row_insert(0, eigenvectors[2][2][0].T) # Mehtod in book is row insert
+        R = eigenvectors[2][2][0].col_insert(0, eigenvectors[1][2][0]).col_insert(0, eigenvectors[0][2][0])
+        if np.linalg.det(np.asarray(R, dtype=np.float64)) + 1 < 1e-3:
+            return None
         xp, yp, zp = sp.symbols('xp yp zp')
         xyz = sp.Matrix([[xp, yp, zp]]) * R.T
         trans = expr.subs({x: xyz[0], y: xyz[1], z: xyz[2]})
@@ -234,12 +251,16 @@ class EllipsoidLeastSquaresModel:
                 expr_trans = expr_trans.subs(term, 0)
         if coefficients_dict[1] > 0:
             return None
-        coeff_xp2 = expr_trans.coeff(xp**2)
-        coeff_xp = expr_trans.coeff(xp)
-        coeff_yp2 = expr_trans.coeff(yp**2)
-        coeff_yp = expr_trans.coeff(yp)
-        coeff_zp2 = expr_trans.coeff(zp**2)
-        coeff_zp = expr_trans.coeff(zp)
+        coefficients_dict = expr_trans.as_coefficients_dict(*var)
+        coeff_xp2 = float(coefficients_dict[xp**2])
+        coeff_xp = float(coefficients_dict[xp])
+        coeff_yp2 = float(coefficients_dict[yp**2])
+        coeff_yp = float(coefficients_dict[yp])
+        coeff_zp2 = float(coefficients_dict[zp**2])
+        coeff_zp = float(coefficients_dict[zp])
+
+        if coeff_zp2 < 0 or coeff_yp2 < 0 or coeff_xp2 < 0:
+            return None
 
         x0 = -0.5 * coeff_xp / coeff_xp2
         y0 = -0.5 * coeff_yp / coeff_yp2
@@ -250,10 +271,11 @@ class EllipsoidLeastSquaresModel:
         Cy = coeff_yp2 * y0**2
         Cz = coeff_zp2 * z0**2
 
-        constJ = abs(coefficients_dict[1] - Cx - Cy - Cz)
-        a = sqrt(constJ / coeff_xp2)
-        b = sqrt(constJ / coeff_yp2)
-        c = sqrt(constJ / coeff_zp2)
+        constJ = float(abs(coefficients_dict[1] - Cx - Cy - Cz))
+
+        a = np.sqrt(constJ / coeff_xp2)
+        b = np.sqrt(constJ / coeff_yp2)
+        c = np.sqrt(constJ / coeff_zp2)
 
         return (x0t, y0t, z0t, a, b, c, R)
 

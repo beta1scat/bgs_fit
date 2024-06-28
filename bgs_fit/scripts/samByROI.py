@@ -30,7 +30,7 @@ def pc_normalize(pc):
 
 # 载入 SAM 模型
 sam_model_type = "vit_h"  # or vit_b, vit_l based on the model you have
-sam_checkpoint_path = "../../data/models/sam_vit_h_4b8939.pth"  # 替换为你的模型路径
+sam_checkpoint_path = "../../../data/models/sam_vit_h_4b8939.pth"  # 替换为你的模型路径
 sam = sam_model_registry[sam_model_type](checkpoint=sam_checkpoint_path)
 sam = sam.to(device = "cuda")
 # sam.to(device = "cpu")
@@ -42,14 +42,14 @@ use_normals = True
 model = importlib.import_module(classifier_model_type)
 classifier = model.get_model(num_class, normal_channel=use_normals)
 classifier = classifier.cuda()
-classifier_checkpoint_path = '../../data/models/best_model_ssg.pth'
+classifier_checkpoint_path = '../../../data/models/best_model_ssg.pth'
 classifier_checkpoint = torch.load(classifier_checkpoint_path)
 classifier.load_state_dict(classifier_checkpoint['model_state_dict'])
 classifier.eval()
 
 # 读取图片 & 深度图
-image_path = "../../data/0003/image.png"  # 替换为你的图片路径
-depth_image_path = '../../data/0003/depth.tiff'
+image_path = "../../../data/0003/image.png"  # 替换为你的图片路径
+depth_image_path = '../../../data/0003/depth.tiff'
 
 image = cv2.imread(image_path)
 print(f"image size: {image.shape}")
@@ -137,11 +137,11 @@ pcd_normalized.points = o3d.utility.Vector3dVector(pts_normalized)
 pcd_normalized.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamKNN(100))
 camera = [0,0,800]
 pcd_normalized.orient_normals_towards_camera_location(camera)
-# o3d.io.write_point_cloud("../../data/outputs/"+"test.ply", pcd)
+# o3d.io.write_point_cloud("../../../data/outputs/"+"test.ply", pcd)
 if len(np.asarray(pcd_normalized.points)) > 2000:
     pcd_normalized = pcd_normalized.farthest_point_down_sample(2000)
 # o3d.visualization.draw_geometries([pcd], point_show_normal=True)
-# o3d.io.write_point_cloud("../../data/outputs/"+"pick.ply", pcd)
+# o3d.io.write_point_cloud("../../../data/outputs/"+"pick.ply", pcd)
 
 # pcd = o3d.io.read_point_cloud("/home/niu/Downloads/BGSPCD/ellipsoid/ellipsoid_0006.ply")
 print(pointcloud.shape)
@@ -177,7 +177,7 @@ coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin
 coord_frame.transform(T)
 o3d.visualization.draw_geometries([fit_cone_pcd, pcd, coord_frame], point_show_normal=False)
 poses = gen_cone_side_pick_poses(height, r1, r2, 100)
-poses_file_path = "../../poses.txt"
+poses_file_path = "../../../poses.txt"
 with open(poses_file_path, 'w+') as file:
     for matrix in poses:
         mat = T * matrix * SE3.Rz(pi/2) # For gripper
@@ -199,7 +199,7 @@ with open(poses_file_path, 'w+') as file:
 # print(c)
 # print(T_cube)
 # poses = gen_cube_side_pick_poses([a*2,b*2,c*2], 1)
-# poses_file_path = "../../poses.txt"
+# poses_file_path = "../../../poses.txt"
 # with open(poses_file_path, 'w+') as file:
 #     for matrix in poses:
 #         mat = T_cube * matrix * SE3.Rz(pi/2) # For gripper
