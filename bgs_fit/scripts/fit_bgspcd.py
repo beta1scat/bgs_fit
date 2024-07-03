@@ -159,7 +159,7 @@ def fit_ellipsoid(pcd):
     points, m, centroid = pc_normalize(np.asarray(pcd.points))
     num_points = len(points)
     ellipsoid_model = EllipsoidLeastSquaresModel()
-    best_fit, _ = ransac(points, ellipsoid_model, 10, 200, 0.02, num_points*0.2, inliers_ratio=0.8, debug=False, return_all=True)
+    best_fit, _ = ransac(points, ellipsoid_model, 10, 100, 0.02, num_points*0.2, inliers_ratio=0.8, debug=False, return_all=True)
     x0t, y0t, z0t, a, b, c, R = ellipsoid_model.get_ellipsoid_params(best_fit)
     center = np.array([x0t, y0t, z0t]) * m + centroid
     return a*m, b*m, c*m, SE3.Rt(SO3(np.array(R, dtype=np.float64)), center)

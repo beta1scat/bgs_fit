@@ -211,6 +211,9 @@ class EllipsoidLeastSquaresModel:
     """
     def fit(self, data):
         A = []
+        data_size = len(data)
+        if data_size > 100:
+            data = data[np.random.choice(data_size, 100, replace=False)]
         for x in data:
             A.append([x[0]**2, x[1]**2, x[2]**2, x[0] * x[1], x[0] * x[2], x[1] * x[2], x[0], x[1], x[2], 1])
         B = np.zeros(data.shape[0])
@@ -311,7 +314,6 @@ class ConeAxisLeastSquaresModel:
         data_size = len(data)
         init_guess = np.random.rand(3)
         result = scipy.optimize.minimize(self.angle_diff_variance, init_guess, args=(data)) # 优化搜索使夹角余弦方差最小
-        print(result)
         vector = result.x / np.linalg.norm(result.x)
         angle = np.max(np.arccos(np.dot(data, vector)))
         return vector, angle

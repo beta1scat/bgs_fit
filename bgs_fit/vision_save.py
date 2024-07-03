@@ -62,10 +62,8 @@ class MinimalSubscriber(Node):
 
     def __init__(self):
         super().__init__('depth_image_subscriber')
-        self.declare_parameter('num', 0)
-        num = self.get_parameter('num').get_parameter_value().integer_value
-        base_path = '/root/ros_ws/src/data'
-        self.savePath = os.path.join(base_path, str(num).zfill(4))
+        self.declare_parameter('base_path', '/root/ros_ws/src/data/0000')
+        self.savePath = self.get_parameter('base_path').get_parameter_value().string_value
         os.makedirs(self.savePath, exist_ok=True)
         self.cv_bridge = CvBridge()
         self.imageSubscription = self.create_subscription(

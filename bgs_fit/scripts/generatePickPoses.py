@@ -106,7 +106,6 @@ def gen_cone_center_pick_poses(height, num_each_position, center=[0,0,0]):
 def gen_ellipsoid_center_pick_poses(num_each_direction, center=[0,0,0]):
     pick_poses = []
     step = 0 if num_each_direction == 1 else 2 * pi / num_each_direction
-    print(step)
     for idx in range(num_each_direction):
         t = step * idx
         T1 = SE3.Rt(SO3.Rz(t), center)

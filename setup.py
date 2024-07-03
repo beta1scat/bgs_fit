@@ -22,6 +22,7 @@ setup(
         'console_scripts': [
             'vision_save = bgs_fit.vision_save:main',
             'shape_fit = bgs_fit.shape_fit:main',
+            'plan_grasp = bgs_fit.plan_grasp:main',
             'get_gazebo_poses = bgs_fit.get_gazebo_poses:main',
         ],
     },

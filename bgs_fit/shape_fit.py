@@ -2,6 +2,7 @@
 import rclpy
 from rclpy.node import Node
 from tf_msgs.srv import StringBool
+import json
 
 import os
 import cv2
@@ -14,6 +15,10 @@ from segment_anything import SamPredictor, sam_model_registry
 from .scripts.fit_bgspcd import *
 from .scripts.generatePickPoses import *
 from .scripts import pointnet2_cls_ssg as pointnet2_cls_ssg
+
+# For X error of failed request badwindow
+import matplotlib
+matplotlib.use('agg')
 
 def depth_to_pointcloud(depth_image, fx, fy, cx, cy):
     height, width = depth_image.shape
@@ -126,7 +131,7 @@ class MinimalService(Node):
         plt.subplot(1, 3, 3)
         plt.imshow(segmented_depth_image)
         plt.title("Segmented depth Image")
-        plt.show()
+        plt.close()
 
         # Camera Intrinsic parameters
         fx = 2327.564263511396
@@ -194,10 +199,12 @@ class MinimalService(Node):
         elif pred_choice == 2:
             a, b, c, T = fit_ellipsoid(pcd_fit)
             poses_geo = []
-            poses = gen_ellipsoid_center_pick_poses(10, [0, 0, 0])
-            for pose in poses:
+            elli_poses = gen_ellipsoid_center_pick_poses(10, [0, 0, 0])
+            poses = []
+            for pose in elli_poses:
                 coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.02, origin=[0, 0, 0])
                 coord.transform(T*pose)
+                poses.append(SE3(T.t)*pose)
                 poses.append(T*pose)
                 poses_geo.append(coord)
             fit_ellipsoid_points = generate_ellipsoid_points(a, b, c, total_points=5000)
@@ -208,22 +215,17 @@ class MinimalService(Node):
             coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
             coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
             coord_frame.transform(T)
-            o3d.visualization.draw_geometries([*poses_geo, fit_ellipsoid_pcd, point_cloud, coord_frame, coord_frame_origin], point_show_normal=False)
+            o3d.visualization.draw_geometries([*poses_geo, fit_ellipsoid_pcd, pcd_fit, coord_frame, coord_frame_origin], point_show_normal=False)
         else:
             print(f"类型错误")
 
-        # poses_file_path = "../../../poses.txt"
-        # with open(poses_file_path, 'w+') as file:
-        #     for matrix in poses:
-        #         mat = T * matrix * SE3.Rz(pi/2) # For gripper
-        #         cos_theta = np.dot(mat.a, np.array([0,0,1]))
-        #         angle_rad = np.arccos(np.clip(cos_theta, -1.0, 1.0))
-        #         if angle_rad < pi / 4:
-        #             for row in mat.A:
-        #                 for element in row:
-        #                     file.write(str(element))
-        #                     file.write(" ")
-        #             file.write('\n')
+        poses_path = os.path.join(base_path, "poses.txt")
+        poses_AA = []
+        for pose in poses:
+            angvec = pose.angvec()[0] * pose.angvec()[1]
+            poses_AA.append([*(pose.t.tolist()), pose.UnitQuaternion().s, *(pose.UnitQuaternion().v)])
+        with open(poses_path, 'w+') as f:
+            json.dump(poses_AA, f)
         response.b = True
         return response
 
