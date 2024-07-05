@@ -102,6 +102,37 @@ def gen_cone_center_pick_poses(height, num_each_position, center=[0,0,0]):
         pick_poses.append(center_T2)
     return pick_poses
 
+def gen_ellipsoid_side_pick_poses(num, a, b, c, aabbInEllipsoid, T):
+    pick_poses = []
+    step = 0 if num == 1 else 2 * pi / num
+    ABC = np.array([a, b, c])
+    aabbExtent = aabbInEllipsoid.get_extent()
+    aabbCenter = aabbInEllipsoid.get_center()
+    diff = np.abs(aabbExtent - 2*ABC)
+    mainIdx = np.argmax(diff)
+    idx1, idx2 = [i for i in range(3) if i != mainIdx]
+    XYZ = np.array([0.0, 0.0, 0.0])
+    top = aabbCenter[mainIdx] + aabbExtent[mainIdx] / 2
+    bottom = aabbCenter[mainIdx] - aabbExtent[mainIdx] / 2
+    XYZ[mainIdx] = top if np.abs(top) < np.abs(bottom) else bottom
+    z_dir = np.array([0.0, 0.0, 0.0])
+    z_dir[mainIdx] = aabbCenter[mainIdx]
+    z_dir = z_dir / np.linalg.norm(z_dir)
+    for idx in range(num):
+        t = step * idx
+        xyz = [0, 0, 0]
+        xyz[idx1] = XYZ[idx1] + ABC[idx1]*np.cos(t)
+        xyz[idx2] = XYZ[idx2] + ABC[idx2]*np.sin(t)
+        xyz[mainIdx] = XYZ[mainIdx]
+        x_dir = np.array([0.0, 0.0, 0.0])
+        x_dir[idx1] = np.cos(t)
+        x_dir[idx2] = np.sin(t)
+        x_dir[mainIdx] = 0
+        T_pick1 = SE3.Rt(SO3.TwoVectors(x=x_dir, z=z_dir), xyz)
+        T_pick2 = SE3.Rt(SO3.TwoVectors(x=-1*x_dir, z=z_dir), xyz)
+        pick_poses.append(T*T_pick1)
+        pick_poses.append(T*T_pick2)
+    return pick_poses
 
 def gen_ellipsoid_center_pick_poses(num_each_direction, center=[0,0,0]):
     pick_poses = []
@@ -156,7 +187,10 @@ def test_cone_poses():
     o3d.visualization.draw_geometries(scene)
 
 def test_ellipsoid_poses():
-    poses = gen_ellipsoid_center_pick_poses(10,[0.5,0.5,0.5])
+    # poses = gen_ellipsoid_center_pick_poses(10,[0.5,0.5,0.5])
+    T = SE3([0.1,0.2,0.3])
+    aabb = o3d.geometry.AxisAlignedBoundingBox(np.array([0.05, 0.15, 0.1]), np.array([0.15, 0.25, 0.]))
+    poses = gen_ellipsoid_side_pick_poses(10, 0.05, 0.05, 0.1, aabb, T)
     scene = []
     origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
     scene.append(origin)
@@ -167,7 +201,7 @@ def test_ellipsoid_poses():
     o3d.visualization.draw_geometries(scene)
 
 if __name__ == "__main__":
-    model_path = "../../data/outputs"
-    test_cube_poses()
-    test_cone_poses()
+    model_path = "../../../data/outputs"
+    # test_cube_poses()
+    # test_cone_poses()
     test_ellipsoid_poses()

@@ -197,15 +197,21 @@ class MinimalService(Node):
             o3d.visualization.draw_geometries([fit_cone_pcd, pcd, coord_frame, coord_frame_origin], point_show_normal=False)
             poses = gen_cone_side_pick_poses(height, r1, r2, 100)
         elif pred_choice == 2:
-            a, b, c, T = fit_ellipsoid(pcd_fit)
+            a, b, c, T, aabb = fit_ellipsoid(pcd_fit)
             poses_geo = []
             elli_poses = gen_ellipsoid_center_pick_poses(10, [0, 0, 0])
+            elli_poses2 = gen_ellipsoid_side_pick_poses(10, a, b, c, aabb, T)
             poses = []
             for pose in elli_poses:
-                coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.02, origin=[0, 0, 0])
+                coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=[0, 0, 0])
                 coord.transform(T*pose)
                 poses.append(SE3(T.t)*pose)
                 poses.append(T*pose)
+                poses_geo.append(coord)
+            for pose in elli_poses2:
+                coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=[0, 0, 0])
+                coord.transform(pose)
+                poses.append(pose)
                 poses_geo.append(coord)
             fit_ellipsoid_points = generate_ellipsoid_points(a, b, c, total_points=5000)
             fit_ellipsoid_pcd = o3d.geometry.PointCloud()

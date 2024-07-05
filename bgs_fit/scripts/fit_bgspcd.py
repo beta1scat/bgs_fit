@@ -162,7 +162,11 @@ def fit_ellipsoid(pcd):
     best_fit, _ = ransac(points, ellipsoid_model, 10, 100, 0.02, num_points*0.2, inliers_ratio=0.8, debug=False, return_all=True)
     x0t, y0t, z0t, a, b, c, R = ellipsoid_model.get_ellipsoid_params(best_fit)
     center = np.array([x0t, y0t, z0t]) * m + centroid
-    return a*m, b*m, c*m, SE3.Rt(SO3(np.array(R, dtype=np.float64)), center)
+    T = SE3.Rt(SO3(np.array(R, dtype=np.float64)), center)
+    pcdCp = o3d.geometry.PointCloud(pcd)
+    pcdCp.transform(T)
+    aabb = pcdCp.get_axis_aligned_bounding_box()
+    return a*m, b*m, c*m, T, aabb
 
 if __name__ == "__main__":
     test = 2 # 0: cube, 1: cone, 2: ellipsoid
@@ -197,12 +201,17 @@ if __name__ == "__main__":
         coord_frame.transform(T)
         o3d.visualization.draw_geometries([*poses_geo, fit_cone_pcd, point_cloud, coord_frame, coord_frame_origin], point_show_normal=False)
     elif test == 2:
-        a, b, c, T = fit_ellipsoid(pcd)
+        a, b, c, T, aabb = fit_ellipsoid(pcd)
         poses_geo = []
         poses = gen_ellipsoid_center_pick_poses(10, [0, 0, 0])
+        poses2 = gen_ellipsoid_side_pick_poses(10, a, b, c, aabb, T)
         for pose in poses:
             coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.02, origin=[0, 0, 0])
             coord.transform(T*pose)
+            poses_geo.append(coord)
+        for pose in poses2:
+            coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.02, origin=[0, 0, 0])
+            coord.transform(pose)
             poses_geo.append(coord)
         fit_ellipsoid_points = generate_ellipsoid_points(a, b, c, total_points=5000)
         fit_ellipsoid_pcd = o3d.geometry.PointCloud()
