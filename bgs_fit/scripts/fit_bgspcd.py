@@ -164,7 +164,7 @@ def fit_ellipsoid(pcd):
     center = np.array([x0t, y0t, z0t]) * m + centroid
     T = SE3.Rt(SO3(np.array(R, dtype=np.float64)), center)
     pcdCp = o3d.geometry.PointCloud(pcd)
-    pcdCp.transform(T)
+    pcdCp.transform(T.inv())
     aabb = pcdCp.get_axis_aligned_bounding_box()
     return a*m, b*m, c*m, T, aabb
 

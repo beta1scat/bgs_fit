@@ -1,6 +1,7 @@
+import scipy
 import numpy as np
 import sympy as sp
-import scipy
+import open3d as o3d
 
 np.set_printoptions(suppress=True)
 
@@ -326,3 +327,25 @@ class ConeAxisLeastSquaresModel:
         angles = np.arccos(np.clip(np.dot(normals, X), -1, 1))
         # angles = angles[angles > 0.2]
         return np.var(angles)
+
+def checkPickPoseFor2FingerGripper(pcd, poses, fingerRange, t = 10):
+    """
+    Check pick poses for 2-finger gripper
+
+    Given:
+        pcd - point cloud in open3d
+        fingerRange - [w, h, d] contact range in x, y, z axis at pick pose coordinate
+        poses - SE3 poses to check
+        t - threshold of points in finger contact OBB
+    Return:
+        fileteredPoses - poses after filter
+    """
+    pts = np.asarray(pcd)
+    halfFingerRange = np.array(fingerRange) / 2
+    filteredPoses = []
+    for pose in poses:
+        fingerObb = o3d.geometry.OrientedBoundingBox(pose.t, pose.R, halfFingerRange)
+        idxs = fingerObb.get_point_indices_within_bounding_box(pcd.points)
+        if len(idxs) > t:
+            filteredPoses.append(pose)
+    return filteredPoses

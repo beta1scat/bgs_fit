@@ -12,6 +12,7 @@ import open3d as o3d
 import matplotlib.pyplot as plt
 
 from segment_anything import SamPredictor, sam_model_registry
+from .scripts.utils import *
 from .scripts.fit_bgspcd import *
 from .scripts.generatePickPoses import *
 from .scripts import pointnet2_cls_ssg as pointnet2_cls_ssg
@@ -201,14 +202,21 @@ class MinimalService(Node):
             poses_geo = []
             elli_poses = gen_ellipsoid_center_pick_poses(10, [0, 0, 0])
             elli_poses2 = gen_ellipsoid_side_pick_poses(10, a, b, c, aabb, T)
+            # elli_poses_filterd = checkPickPoseFor2FingerGripper(pcd_fit, elli_poses, [0.05, 0.02, 0.02], 10)
+            elli_poses_filterd = elli_poses
+            elli_poses2_filterd = checkPickPoseFor2FingerGripper(pcd_fit, elli_poses2, [0.05, 0.02, 0.02], 10)
+            print(f"len(elli_poses): {len(elli_poses)}")
+            print(f"len(elli_poses2): {len(elli_poses2)}")
+            print(f"len(elli_poses_filterd): {len(elli_poses_filterd)}")
+            print(f"len(elli_poses2_filterd): {len(elli_poses2_filterd)}")
             poses = []
-            for pose in elli_poses:
+            for pose in elli_poses_filterd:
                 coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=[0, 0, 0])
                 coord.transform(T*pose)
                 poses.append(SE3(T.t)*pose)
                 poses.append(T*pose)
                 poses_geo.append(coord)
-            for pose in elli_poses2:
+            for pose in elli_poses2_filterd:
                 coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=[0, 0, 0])
                 coord.transform(pose)
                 poses.append(pose)

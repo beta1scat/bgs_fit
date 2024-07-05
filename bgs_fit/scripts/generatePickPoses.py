@@ -189,7 +189,7 @@ def test_cone_poses():
 def test_ellipsoid_poses():
     # poses = gen_ellipsoid_center_pick_poses(10,[0.5,0.5,0.5])
     T = SE3([0.1,0.2,0.3])
-    aabb = o3d.geometry.AxisAlignedBoundingBox(np.array([0.05, 0.15, 0.1]), np.array([0.15, 0.25, 0.]))
+    aabb = o3d.geometry.AxisAlignedBoundingBox(np.array([0.05, 0.15, 0.1]), np.array([0.15, 0.25, 0.2]))
     poses = gen_ellipsoid_side_pick_poses(10, 0.05, 0.05, 0.1, aabb, T)
     scene = []
     origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
