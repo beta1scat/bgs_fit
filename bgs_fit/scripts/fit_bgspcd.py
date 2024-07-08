@@ -4,6 +4,10 @@ import numpy as np
 from spatialmath import SO3, SE3
 from sklearn import linear_model
 from sklearn.cluster import KMeans
+from sklearn.linear_model import RANSACRegressor
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.pipeline import make_pipeline
+from sklearn.linear_model import LinearRegression
 # For ROS2
 from .utils import *
 from .generatePickPoses import *
@@ -30,7 +34,7 @@ def fit_cuboid_obb(pcd):
     c = aabb.max_bound[2]
     return a, b, c, T
 
-def fit_frustum_cone_by_slice(points, num_layers=10):
+def fit_frustum_cone_by_slice_linear(points, num_layers=10):
     '''
         Fit frustum cone by slice points along Z-axis
     Params:
@@ -76,6 +80,55 @@ def fit_frustum_cone_by_slice(points, num_layers=10):
     center = np.array([np.mean(layer_center[inlier_mask, 0]), np.mean(layer_center[inlier_mask, 1]), (z_min + z_max) / 2])
     return r1, r2, height, center
 
+def fit_frustum_cone_by_slice_poly(points, num_layers=10):
+    '''
+        Fit frustum cone by slice points along Z-axis
+    Params:
+    - points: input points
+    - num_layers: the number of slice layers
+    Return:
+    - r1: radius of max Z slice layers
+    - r2: radius of min Z slice layers
+    - height: max Z - min Z
+    - center: center coordinate at X-Y plane [x,y]
+    '''
+    x, y, z = points[:,0], points[:,1], points[:,2]
+    z_min = z.min()
+    z_max = z.max()
+    height = z_max - z_min
+    z_step = height / num_layers
+    layer_pts = []
+    for i in range(num_layers):
+        layer_min = z_min + i * height / num_layers
+        layer_max = z_min + (i + 1) * height / num_layers
+        mask = (z >= layer_min) & (z < layer_max)
+        layer_pts.append(points[mask])
+    layer_radius = {}
+    layer_center = {}
+    for layer_idx in range (num_layers):
+        layer_idx_pts = layer_pts[layer_idx]
+        cirModel = CircleLeastSquaresModel()
+        bestmodel, inliers = ransac(layer_idx_pts[:,:2], cirModel, 3, 100, 0.01, 10, debug=False, return_all=True)
+        if bestmodel is not None:
+            layer_radius[layer_idx] = bestmodel[2]
+            layer_center[layer_idx] = bestmodel[:2]
+    X_to_fit = np.array(list(layer_radius.keys()))[:, np.newaxis]
+    y_to_fit = np.array(list(layer_radius.values()))
+    model = make_pipeline(PolynomialFeatures(degree=2), RANSACRegressor(LinearRegression()))
+    model.fit(X_to_fit, y_to_fit.ravel())
+    ransacModel = model.named_steps['ransacregressor']
+    inlier_mask = ransacModel.inlier_mask_
+    outlier_mask = np.logical_not(inlier_mask)
+    # inlier_mask = np.where(ransac.inlier_mask_)[0]
+    # outlier_mask = np.where(np.logical_not(ransac.inlier_mask_))[0]
+    line_x_ransac = np.array(range(num_layers))[:, np.newaxis]
+    line_y_ransac = model.predict(line_x_ransac)
+    r2 = line_y_ransac[0] # From min to max, so r2 is bottom
+    r1 = line_y_ransac[-1]
+    layer_center = np.array(list(layer_center.values()))
+    center = np.array([np.mean(layer_center[inlier_mask, 0]), np.mean(layer_center[inlier_mask, 1]), (z_min + z_max) / 2])
+    return r1, r2, height, center
+
 def fit_frustum_cone_ransac(pcd):
     '''
         Fit frustum cone by RANSAC method
@@ -109,7 +162,7 @@ def fit_frustum_cone_ransac(pcd):
     r1, r2, height, center = fit_frustum_cone_by_slice(points, 30)
     return r1, r2, height, SE3.Rt(R, center)
 
-def fit_frustum_cone_normal(pcd):
+def fit_frustum_cone_normal(pcd, use_poly=False):
     points = np.asarray(pcd.points)
     normals = np.asarray(pcd.normals)
     num_points = len(points)
@@ -144,15 +197,18 @@ def fit_frustum_cone_normal(pcd):
         cone_normal = vector
     vec_x = np.cross(cone_normal, [0,0,1])
     R = SO3.TwoVectors(x=vec_x, z=cone_normal)
-    pcd.rotate(R.inv(), center=[0,0,0])
-    aabb = pcd.get_axis_aligned_bounding_box()
-    aabb.color = [0,0,1]
-    coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
-    coord_frame_cone = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
-    coord_frame_cone.rotate(R,center=[0,0,0])
-    o3d.visualization.draw_geometries([coord_frame_origin, coord_frame_cone, aabb, pcd], point_show_normal=True)
+    # pcd.rotate(R.inv(), center=[0,0,0])
+    # aabb = pcd.get_axis_aligned_bounding_box()
+    # aabb.color = [0,0,1]
+    # coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
+    # coord_frame_cone = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
+    # coord_frame_cone.rotate(R,center=[0,0,0])
+    # o3d.visualization.draw_geometries([coord_frame_origin, coord_frame_cone, aabb, pcd], point_show_normal=True)
     """ Fit cone radius  """
-    r1, r2, height, center = fit_frustum_cone_by_slice(points, 30)
+    if use_poly:
+        r1, r2, height, center = fit_frustum_cone_by_slice_poly(points, 30)
+    else:
+        r1, r2, height, center = fit_frustum_cone_by_slice_linear(points, 30)
     return r1, r2, height, SE3(R) * SE3(center)
 
 def fit_ellipsoid(pcd):
@@ -163,10 +219,7 @@ def fit_ellipsoid(pcd):
     x0t, y0t, z0t, a, b, c, R = ellipsoid_model.get_ellipsoid_params(best_fit)
     center = np.array([x0t, y0t, z0t]) * m + centroid
     T = SE3.Rt(SO3(np.array(R, dtype=np.float64)), center)
-    pcdCp = o3d.geometry.PointCloud(pcd)
-    pcdCp.transform(T.inv())
-    aabb = pcdCp.get_axis_aligned_bounding_box()
-    return a*m, b*m, c*m, T, aabb
+    return a*m, b*m, c*m, T
 
 if __name__ == "__main__":
     test = 2 # 0: cube, 1: cone, 2: ellipsoid
@@ -201,10 +254,10 @@ if __name__ == "__main__":
         coord_frame.transform(T)
         o3d.visualization.draw_geometries([*poses_geo, fit_cone_pcd, point_cloud, coord_frame, coord_frame_origin], point_show_normal=False)
     elif test == 2:
-        a, b, c, T, aabb = fit_ellipsoid(pcd)
+        a, b, c, T = fit_ellipsoid(pcd)
         poses_geo = []
         poses = gen_ellipsoid_center_pick_poses(10, [0, 0, 0])
-        poses2 = gen_ellipsoid_side_pick_poses(10, a, b, c, aabb, T)
+        poses2 = gen_ellipsoid_side_pick_poses(10, a, b, c, T, pcd)
         for pose in poses:
             coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.02, origin=[0, 0, 0])
             coord.transform(T*pose)

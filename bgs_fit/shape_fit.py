@@ -198,37 +198,36 @@ class MinimalService(Node):
             o3d.visualization.draw_geometries([fit_cone_pcd, pcd, coord_frame, coord_frame_origin], point_show_normal=False)
             poses = gen_cone_side_pick_poses(height, r1, r2, 100)
         elif pred_choice == 2:
-            a, b, c, T, aabb = fit_ellipsoid(pcd_fit)
+            a, b, c, T_ellip = fit_ellipsoid(pcd_fit)
+            r1, r2, height, T_cone = fit_frustum_cone_normal(pcd_fit, True)
+            # o3d.io.write_point_cloud("/root/ros_ws/src/data/outputs/"+"pick.ply", pcd_fit)
             poses_geo = []
             elli_poses = gen_ellipsoid_center_pick_poses(10, [0, 0, 0])
-            elli_poses2 = gen_ellipsoid_side_pick_poses(10, a, b, c, aabb, T)
-            # elli_poses_filterd = checkPickPoseFor2FingerGripper(pcd_fit, elli_poses, [0.05, 0.02, 0.02], 10)
-            elli_poses_filterd = elli_poses
-            elli_poses2_filterd = checkPickPoseFor2FingerGripper(pcd_fit, elli_poses2, [0.05, 0.02, 0.02], 10)
-            print(f"len(elli_poses): {len(elli_poses)}")
-            print(f"len(elli_poses2): {len(elli_poses2)}")
-            print(f"len(elli_poses_filterd): {len(elli_poses_filterd)}")
-            print(f"len(elli_poses2_filterd): {len(elli_poses2_filterd)}")
+            elli_poses2 = gen_cone_side_pick_poses(height, r1, r2, 10)
             poses = []
-            for pose in elli_poses_filterd:
-                coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=[0, 0, 0])
-                coord.transform(T*pose)
-                poses.append(SE3(T.t)*pose)
-                poses.append(T*pose)
+            for pose in elli_poses:
+                coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.02, origin=[0, 0, 0])
+                coord.transform(T_ellip*pose)
+                poses.append(SE3(T_ellip.t)*pose)
+                poses.append(T_ellip*pose)
                 poses_geo.append(coord)
-            for pose in elli_poses2_filterd:
-                coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=[0, 0, 0])
-                coord.transform(pose)
-                poses.append(pose)
+            for pose in elli_poses2:
+                coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.02, origin=[0, 0, 0])
+                coord.transform(T_cone*pose)
+                poses.append(T_cone*pose)
                 poses_geo.append(coord)
+            poses_filterd = checkPickPoseFor2FingerGripper(pcd_fit, poses, [0.05, 0.02, 0.02], 10)
+            print(f"len(poses): {len(poses)}")
+            print(f"len(poses_filterd): {len(poses_filterd)}")
+            pose = poses_filterd
             fit_ellipsoid_points = generate_ellipsoid_points(a, b, c, total_points=5000)
             fit_ellipsoid_pcd = o3d.geometry.PointCloud()
             fit_ellipsoid_pcd.points = o3d.utility.Vector3dVector(fit_ellipsoid_points)
             fit_ellipsoid_pcd.paint_uniform_color([0, 0, 1])
-            fit_ellipsoid_pcd.transform(T)
+            fit_ellipsoid_pcd.transform(T_ellip)
             coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
             coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
-            coord_frame.transform(T)
+            coord_frame.transform(T_ellip)
             o3d.visualization.draw_geometries([*poses_geo, fit_ellipsoid_pcd, pcd_fit, coord_frame, coord_frame_origin], point_show_normal=False)
         else:
             print(f"类型错误")

@@ -71,12 +71,18 @@ def gen_cone_side_pick_poses(height, top_r, bottom_r, num_each_side):
         bottom_zL = np.array([[0, 0, 1]])
         if top_r > bottom_r:
             top_T = SE3.Rt(SO3.TwoVectors(x=top_xL, z=top_zL)*SO3.Ry(-alpha), [top_x, top_y, top_z])
-            bottom_T = SE3.Rt(SO3.TwoVectors(x=bottom_xL, z=bottom_zL)*SO3.Ry(alpha), [bottom_x, bottom_y, bottom_z])
+            top_T2 = SE3.Rt(SO3.TwoVectors(x=top_xL, z=top_zL), [top_x, top_y, top_z])
+            bottom_T = SE3.Rt(SO3.TwoVectors(x=bottom_xL, z=bottom_zL)*SO3.Ry(-alpha), [bottom_x, bottom_y, bottom_z])
+            bottom_T2 = SE3.Rt(SO3.TwoVectors(x=bottom_xL, z=bottom_zL), [bottom_x, bottom_y, bottom_z])
         else:
             top_T = SE3.Rt(SO3.TwoVectors(x=top_xL, z=top_zL)*SO3.Ry(alpha), [top_x, top_y, top_z])
+            top_T2 = SE3.Rt(SO3.TwoVectors(x=top_xL, z=top_zL), [top_x, top_y, top_z])
             bottom_T = SE3.Rt(SO3.TwoVectors(x=bottom_xL, z=bottom_zL)*SO3.Ry(-alpha), [bottom_x, bottom_y, bottom_z])
+            bottom_T2 = SE3.Rt(SO3.TwoVectors(x=bottom_xL, z=bottom_zL), [bottom_x, bottom_y, bottom_z])
         pick_poses.append(top_T)
+        pick_poses.append(top_T2)
         pick_poses.append(bottom_T)
+        pick_poses.append(bottom_T2)
     return pick_poses
 
 def gen_cone_center_pick_poses(height, num_each_position, center=[0,0,0]):
@@ -102,14 +108,49 @@ def gen_cone_center_pick_poses(height, num_each_position, center=[0,0,0]):
         pick_poses.append(center_T2)
     return pick_poses
 
-def gen_ellipsoid_side_pick_poses(num, a, b, c, aabbInEllipsoid, T):
+def gen_ellipsoid_side_pick_poses(num, a, b, c, T, pcd):
+    origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
+    pcdCp = o3d.geometry.PointCloud(pcd)
+    pcdCp.transform(T.inv())
+    aabb = pcdCp.get_axis_aligned_bounding_box()
+    aabb.color =[0,1,0]
+    pts = np.asarray(pcdCp.points)
     pick_poses = []
     step = 0 if num == 1 else 2 * pi / num
     ABC = np.array([a, b, c])
-    aabbExtent = aabbInEllipsoid.get_extent()
-    aabbCenter = aabbInEllipsoid.get_center()
+    aabbExtent = aabb.get_extent()
+    aabbCenter = aabb.get_center()
     diff = np.abs(aabbExtent - 2*ABC)
     mainIdx = np.argmax(diff)
+    # minPtIdxInMainDir = np.argmin(np.abs(pts[:, mainIdx]))
+    # minPt = pts[minPtIdxInMainDir]
+    minPtIdxInMainDir = np.argmax(pts[:, mainIdx])
+    minPt = pts[minPtIdxInMainDir]
+    maxPtRef = -1 * minPt
+    print(minPt)
+    print(maxPtRef)
+    distance2maxPtRef = np.linalg.norm(pts - maxPtRef)
+    # correctAngle = np.arcsin(np.min(distance2maxPtRef) / 2*np.linalg.norm(minPt))
+    maxPt = pts[np.argmin(distance2maxPtRef)]
+    correctAngle = np.arccos(np.dot(-minPt, maxPt-minPt))
+    unitVec = np.array([0.0, 0.0, 0.0])
+    unitVec[mainIdx] = 1.0
+    rotDir = np.cross(minPt, unitVec)
+    T_correct = SE3.AngVec(correctAngle, rotDir)
+    sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.01, resolution=100)
+    sphere.paint_uniform_color([1.0,1.0,0.0]) # Yellow
+    sphere.translate(minPt)
+    sphere2 = o3d.geometry.TriangleMesh.create_sphere(radius=0.01, resolution=100)
+    sphere2.paint_uniform_color([1.0,1.0,0.0]) # Yellow
+    sphere2.translate(maxPt)
+    o3d.visualization.draw_geometries([aabb, pcdCp, origin, sphere, sphere2])
+    pcdCp.transform(T_correct.inv())
+    aabb = pcdCp.get_axis_aligned_bounding_box()
+    aabb.color =[1,0,0]
+    aabbExtent = aabb.get_extent()
+    aabbCenter = aabb.get_center()
+    o3d.visualization.draw_geometries([aabb, pcdCp, origin])
+    ABC = aabbExtent / 2
     idx1, idx2 = [i for i in range(3) if i != mainIdx]
     XYZ = np.array([0.0, 0.0, 0.0])
     top = aabbCenter[mainIdx] + aabbExtent[mainIdx] / 2
@@ -130,8 +171,8 @@ def gen_ellipsoid_side_pick_poses(num, a, b, c, aabbInEllipsoid, T):
         x_dir[mainIdx] = 0
         T_pick1 = SE3.Rt(SO3.TwoVectors(x=x_dir, z=z_dir), xyz)
         T_pick2 = SE3.Rt(SO3.TwoVectors(x=-1*x_dir, z=z_dir), xyz)
-        pick_poses.append(T*T_pick1)
-        pick_poses.append(T*T_pick2)
+        pick_poses.append(T*T_correct*T_pick1)
+        pick_poses.append(T*T_correct*T_pick2)
     return pick_poses
 
 def gen_ellipsoid_center_pick_poses(num_each_direction, center=[0,0,0]):
@@ -173,29 +214,33 @@ def test_cube_poses():
     o3d.visualization.draw_geometries(scene)
 
 def test_cone_poses():
+    # pcd_fit = o3d.io.read_point_cloud("/root/ros_ws/src/data/outputs/pick.ply")
+    # r1, r2, height, T = fit_frustum_cone_normal(pcd_fit)
     height, top_r, bottom_r = [1.2, 1.0, 1.6]
-    poses1 = gen_cone_side_pick_poses(height, top_r, bottom_r, 100)
+    poses1 = gen_cone_side_pick_poses(height, r1, r2, 100)
     poses2 = gen_cone_center_pick_poses(height, 10)
     poses = poses1 + poses2
     scene = []
-    origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
-    # scene.append(origin)
+    origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
+    scene.append(origin)
+    scene.append(pcd_fit)
     for pose in poses:
-        coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
-        coord.transform(pose)
+        coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.01, origin=[0, 0, 0])
+        coord.transform(T*pose)
         scene.append(coord)
     o3d.visualization.draw_geometries(scene)
 
 def test_ellipsoid_poses():
-    # poses = gen_ellipsoid_center_pick_poses(10,[0.5,0.5,0.5])
-    T = SE3([0.1,0.2,0.3])
-    aabb = o3d.geometry.AxisAlignedBoundingBox(np.array([0.05, 0.15, 0.1]), np.array([0.15, 0.25, 0.2]))
-    poses = gen_ellipsoid_side_pick_poses(10, 0.05, 0.05, 0.1, aabb, T)
+    # pcd_fit = o3d.io.read_point_cloud("/root/ros_ws/src/data/outputs/pick.ply")
+    # a, b, c, T = fit_ellipsoid(pcd_fit)
+    # poses = gen_ellipsoid_side_pick_poses(10, a, b, c, T, pcd_fit)
+    poses = gen_ellipsoid_center_pick_poses(10)
     scene = []
-    origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
+    origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
     scene.append(origin)
+    # scene.append(pcd_fit)
     for pose in poses:
-        coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
+        coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=[0, 0, 0])
         coord.transform(pose)
         scene.append(coord)
     o3d.visualization.draw_geometries(scene)
@@ -203,5 +248,5 @@ def test_ellipsoid_poses():
 if __name__ == "__main__":
     model_path = "../../../data/outputs"
     # test_cube_poses()
-    # test_cone_poses()
-    test_ellipsoid_poses()
+    test_cone_poses()
+    # test_ellipsoid_poses()
