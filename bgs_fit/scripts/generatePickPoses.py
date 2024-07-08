@@ -31,26 +31,31 @@ def gen_cube_side_pick_poses(size, num_each_side):
                 pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[3], z=zL[1]), tL[idx_n+idx_t*num_each_side]))
     return pick_poses
 
-def gen_cube_center_pick_poses(center=[0,0,0]):
+def gen_cube_center_pick_poses(a=0, b=0, c=0, center=[0.0, 0.0, 0.0]):
     pick_poses = []
-    for idx_z in range(2,3):
+    length = np.array([a, b, c])
+    for idx_z in range(0,3):
         idx1, idx2 = [i for i in range(3) if i != idx_z]
-        xL = np.array([[0,0,0]]*4)
-        zL = np.array([[0,0,0]]*2)
+        xL = np.array([[0.0,0.0,0.0]]*4)
+        zL = np.array([[0.0,0.0,0.0]]*2)
+        center_top = np.array([0.0,0.0,0.0])
+        center_bottom = np.array([0.0,0.0,0.0])
+        center_top[idx_z] = 1 * length[idx_z]
+        center_bottom[idx_z] = -1 * length[idx_z]
         zL[0, idx_z] = 1
         zL[1, idx_z] = -1
         xL[0, idx1] = 1
         xL[1, idx1] = -1
         xL[2, idx2] = 1
         xL[3, idx2] = -1
-        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[0], z=zL[0]), center))
-        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[1], z=zL[0]), center))
-        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[2], z=zL[0]), center))
-        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[3], z=zL[0]), center))
-        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[0], z=zL[1]), center))
-        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[1], z=zL[1]), center))
-        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[2], z=zL[1]), center))
-        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[3], z=zL[1]), center))
+        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[0], z=zL[0]), np.asarray(center) + center_bottom))
+        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[1], z=zL[0]), np.asarray(center) + center_bottom))
+        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[2], z=zL[0]), np.asarray(center) + center_bottom))
+        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[3], z=zL[0]), np.asarray(center) + center_bottom))
+        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[0], z=zL[1]), np.asarray(center) + center_top))
+        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[1], z=zL[1]), np.asarray(center) + center_top))
+        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[2], z=zL[1]), np.asarray(center) + center_top))
+        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[3], z=zL[1]), np.asarray(center) + center_top))
     return pick_poses
 
 def gen_cone_side_pick_poses(height, top_r, bottom_r, num_each_side):
