@@ -10,71 +10,11 @@ from ros2_data.action import MoveXYZW
 from tf_msgs.srv import StringBool
 from spatialmath import SO3, SE3
 from spatialmath import UnitQuaternion as UQ
+from .scripts.utils import *
 
 # Unit is meter
 tool_coordinate = SE3.Trans([0, 0, 0.2])
 cam_in_base = SE3.Trans([0.35, -0.3, 1]) * UQ([0.0, 0.707, -0.707, 0.0]).SE3()
-
-def filter_pose_by_axis_diff(poses, axis=2, ref_axis=[0,0,1], t=np.pi/2, sorted=False):
-    """
-    根据位姿的某一个轴与参考轴的夹角进行排序，并剔除掉超过阈值的位姿。
-
-    参数:
-    poses (list of np.ndarray/SE3): 一组位姿矩阵，每个矩阵为4x4的变换矩阵或使用 spatialmath 中的 SE3 对象表示。
-    axis (int): 指定的轴索引（0, 1, 2分别代表x, y, z轴）。
-    ref_axis (list): 参考轴，默认为[0, 0, 1]，即z轴。
-    t (float): 夹角阈值，超过该阈值的位姿将被剔除。
-    sorted (bool): 是否对结果进行排序，默认为False。
-
-    返回:
-    list of np.ndarray: 剔除掉超过阈值后的位姿列表，并根据需要进行排序。
-    """
-    def angle_between_axes(pose_axis, ref_axis):
-        # 计算两个轴之间的夹角
-        pose_axis = np.array(pose_axis)
-        ref_axis = np.array(ref_axis)
-        cos_angle = np.dot(pose_axis, ref_axis) / (np.linalg.norm(pose_axis) * np.linalg.norm(ref_axis))
-        cos_angle = np.clip(cos_angle, -1.0, 1.0)  # 避免数值误差导致的cos值超出[-1, 1]范围
-        angle = np.arccos(cos_angle)
-        return angle
-    valid_poses = []
-    angles = []
-    for pose in poses:
-        # 获取位姿矩阵的指定轴
-        if isinstance(pose, SE3):
-            pose_axis = pose.A[:3, axis]
-        else:
-            pose_axis = pose[:3, axis]
-        angle = angle_between_axes(pose_axis, ref_axis)
-        if angle <= t:
-            valid_poses.append(pose)
-            angles.append(angle)
-    if sorted:
-        # 按照角度进行排序
-        sorted_indices = np.argsort(angles)
-        valid_poses = [valid_poses[i] for i in sorted_indices]
-    return valid_poses
-
-def sort_pose_by_rot_diff(poses, ref_pose):
-    """
-    根据旋转矩阵的差异对位姿列表进行排序。
-
-    参数:
-    poses (list of SE3): 一组位姿，使用 spatialmath 中的 SE3 对象表示。
-    ref_pose (SE3): 参考位姿，使用 spatialmath 中的 SE3 对象表示。
-
-    返回:
-    list of SE3: 根据旋转矩阵差异排序后的位姿列表。
-    """
-    def rotation_difference(pose1, pose2):
-        # 计算两个位姿的旋转矩阵差异
-        return pose1.angdist(pose2, metric=6)
-    # 计算每个位姿与参考位姿的旋转矩阵差异
-    differences = [rotation_difference(pose, ref_pose) for pose in poses]
-    # 根据差异对位姿进行排序
-    sorted_indices = np.argsort(differences)
-    sorted_poses = [poses[i] for i in sorted_indices]
-    return sorted_poses
 
 class PlanGrasp(Node):
 

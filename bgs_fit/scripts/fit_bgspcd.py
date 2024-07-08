@@ -29,6 +29,7 @@ def fit_cuboid_obb(pcd):
     T = SE3.Rt(obb.R, obb.center)
     pcd.transform(T.inv())
     aabb = pcd.get_axis_aligned_bounding_box()
+    pcd.transform(T)
     a = aabb.max_bound[0]
     b = aabb.max_bound[1]
     c = aabb.max_bound[2]
@@ -163,6 +164,7 @@ def fit_frustum_cone_ransac(pcd):
     return r1, r2, height, SE3.Rt(R, center)
 
 def fit_frustum_cone_normal(pcd, use_poly=False):
+    # points, m, centroid = pc_normalize(np.asarray(pcd.points))
     points = np.asarray(pcd.points)
     normals = np.asarray(pcd.normals)
     num_points = len(points)
@@ -197,18 +199,21 @@ def fit_frustum_cone_normal(pcd, use_poly=False):
         cone_normal = vector
     vec_x = np.cross(cone_normal, [0,0,1])
     R = SO3.TwoVectors(x=vec_x, z=cone_normal)
-    # pcd.rotate(R.inv(), center=[0,0,0])
-    # aabb = pcd.get_axis_aligned_bounding_box()
-    # aabb.color = [0,0,1]
-    # coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
-    # coord_frame_cone = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
-    # coord_frame_cone.rotate(R,center=[0,0,0])
-    # o3d.visualization.draw_geometries([coord_frame_origin, coord_frame_cone, aabb, pcd], point_show_normal=True)
+    pcd.rotate(R.inv(), center=[0,0,0])
+    aabb = pcd.get_axis_aligned_bounding_box()
+    aabb.color = [0,0,1]
+    coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
+    coord_frame_cone = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
+    coord_frame_cone.rotate(R,center=[0,0,0])
+    o3d.visualization.draw_geometries([coord_frame_origin, coord_frame_cone, aabb, pcd], point_show_normal=True)
     """ Fit cone radius  """
     if use_poly:
         r1, r2, height, center = fit_frustum_cone_by_slice_poly(points, 30)
     else:
         r1, r2, height, center = fit_frustum_cone_by_slice_linear(points, 30)
+    pcd.rotate(R, center=[0,0,0])
+    # center = np.asarray(center) * m + centroid
+    # return r1* m, r2* m, height* m, SE3(R) * SE3(center)
     return r1, r2, height, SE3(R) * SE3(center)
 
 def fit_ellipsoid(pcd):
@@ -237,7 +242,7 @@ if __name__ == "__main__":
     elif test == 1:
         r1, r2, height, T = fit_frustum_cone_normal(pcd)
         poses_geo = []
-        poses1 = gen_cone_side_pick_poses(height, r1, r2, 100)
+        poses1 = gen_cone_side_pick_poses(height, r1, r2, 10)
         poses2 = gen_cone_center_pick_poses(height, 10)
         poses = poses1 + poses2
         for pose in poses:
