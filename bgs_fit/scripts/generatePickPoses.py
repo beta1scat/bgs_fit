@@ -93,7 +93,6 @@ def gen_cone_side_pick_poses(height, top_r, bottom_r, num_each_side):
 def gen_cone_center_pick_poses(height, num_each_position, center=[0,0,0]):
     pick_poses = []
     step = 0 if num_each_position == 1 else 2 * pi / num_each_position
-    print(step)
     for idx in range(num_each_position):
         top_x = 0
         top_y = 0
@@ -105,10 +104,31 @@ def gen_cone_center_pick_poses(height, num_each_position, center=[0,0,0]):
         t = step * idx
         top_T = SE3.Rt(SO3.Rz(t)*SO3.Rx(pi), [top_x, top_y, top_z])
         bottom_T = SE3.Rt(SO3.Rz(-t), [bottom_x, bottom_y, bottom_z])
-        center_T1 = SE3.Rt(SO3.Ry(pi/2)*SO3.Rx(t), center)
-        center_T2 = SE3.Rt(SO3.Ry(-pi/2)*SO3.Rx(t), center)
+        # center_T1 = SE3.Rt(SO3.Ry(pi/2)*SO3.Rx(t), center)
+        # center_T2 = SE3.Rt(SO3.Ry(-pi/2)*SO3.Rx(t), center)
         pick_poses.append(top_T)
         pick_poses.append(bottom_T)
+        # pick_poses.append(center_T1)
+        # pick_poses.append(center_T2)
+    for idx in range(num_each_position):
+        top_x = 0
+        top_y = 0
+        top_z = height / 2
+        bottom_x = 0
+        bottom_y = 0
+        bottom_z = -1 * height / 2
+        center_xyz = center
+        t = step * idx
+        top_T1 = SE3.Rt(SO3.Ry(pi/2)*SO3.Rx(t), [top_x, top_y, top_z])
+        top_T2 = SE3.Rt(SO3.Ry(-pi/2)*SO3.Rx(t), [top_x, top_y, top_z])
+        bottom_T1 = SE3.Rt(SO3.Ry(pi/2)*SO3.Rx(t), [bottom_x, bottom_y, bottom_z])
+        bottom_T2 = SE3.Rt(SO3.Ry(-pi/2)*SO3.Rx(t), [bottom_x, bottom_y, bottom_z])
+        center_T1 = SE3.Rt(SO3.Ry(pi/2)*SO3.Rx(t), center)
+        center_T2 = SE3.Rt(SO3.Ry(-pi/2)*SO3.Rx(t), center)
+        pick_poses.append(top_T1)
+        pick_poses.append(top_T2)
+        pick_poses.append(bottom_T1)
+        pick_poses.append(bottom_T2)
         pick_poses.append(center_T1)
         pick_poses.append(center_T2)
     return pick_poses

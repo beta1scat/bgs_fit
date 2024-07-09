@@ -164,9 +164,11 @@ def fit_frustum_cone_ransac(pcd):
     return r1, r2, height, SE3.Rt(R, center)
 
 def fit_frustum_cone_normal(pcd, use_poly=False):
-    # points, m, centroid = pc_normalize(np.asarray(pcd.points))
-    points = np.asarray(pcd.points)
-    normals = np.asarray(pcd.normals)
+    pcd_normalized = o3d.geometry.PointCloud(pcd)
+    pts, m, centroid = pc_normalize(np.asarray(pcd.points))
+    pcd_normalized.points = o3d.utility.Vector3dVector(pts)
+    points = np.asarray(pcd_normalized.points)
+    normals = np.asarray(pcd_normalized.normals)
     num_points = len(points)
     num_clusters = 10
     kmeans = KMeans(n_clusters=num_clusters, random_state=0, tol = 0.01).fit(normals)
@@ -179,13 +181,18 @@ def fit_frustum_cone_normal(pcd, use_poly=False):
         cluster_indices_size = len(cluster_indices)
         if cluster_indices_size < 100:
             continue
-        cluster_pcd = pcd.select_by_index(cluster_indices)
+        cluster_pcd = pcd_normalized.select_by_index(cluster_indices)
         cluster_normal = np.mean(normals[cluster_indices], axis=0)
         cluster_normals_list.append(cluster_normal)
         plane_model, plane_inliers = cluster_pcd.segment_plane(distance_threshold=0.001, ransac_n=3, num_iterations=1000)
         plane_normals_list.append(plane_model[:3])
         ratio = len(plane_inliers) / cluster_indices_size
         plane_points_ratio_list.append(ratio)
+        # print(f"idx: {i}, plane_normals_list: {plane_model[:3]}, cluster_normal: {cluster_normal}")
+        # print(f"pts: {cluster_indices_size}, Ratio: {ratio}")
+        # plane_pcd = cluster_pcd.select_by_index(plane_inliers)
+        # plane_pcd.paint_uniform_color([1,0,0])
+        # o3d.visualization.draw_geometries([cluster_pcd, plane_pcd], window_name='Classified Point Clouds', point_show_normal=True)
     if np.max(plane_points_ratio_list) > 0.6:
         print(f"使用平面法向量")
         max_plane_ratio_idx = np.argmax(plane_points_ratio_list)
@@ -194,27 +201,18 @@ def fit_frustum_cone_normal(pcd, use_poly=False):
         print(f"使用估计法向量")
         cone_axis_model = ConeAxisLeastSquaresModel()
         cluster_normals_list = np.array(cluster_normals_list)
-        best_fit, _ = ransac(cluster_normals_list, cone_axis_model, 3, 100, 0.02, num_points*0.2, inliers_ratio=0.8, debug=False, return_all=True)
+        best_fit, _ = ransac(normals, cone_axis_model, 3, 100, 0.02, num_points*0.2, inliers_ratio=0.8, debug=False, return_all=True)
         vector, best_angle = best_fit
         cone_normal = vector
     vec_x = np.cross(cone_normal, [0,0,1])
     R = SO3.TwoVectors(x=vec_x, z=cone_normal)
-    pcd.rotate(R.inv(), center=[0,0,0])
-    aabb = pcd.get_axis_aligned_bounding_box()
-    aabb.color = [0,0,1]
-    coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
-    coord_frame_cone = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
-    coord_frame_cone.rotate(R,center=[0,0,0])
-    o3d.visualization.draw_geometries([coord_frame_origin, coord_frame_cone, aabb, pcd], point_show_normal=True)
+    pcd_normalized.rotate(R.inv(), center=[0,0,0])
     """ Fit cone radius  """
     if use_poly:
         r1, r2, height, center = fit_frustum_cone_by_slice_poly(points, 30)
     else:
         r1, r2, height, center = fit_frustum_cone_by_slice_linear(points, 30)
-    pcd.rotate(R, center=[0,0,0])
-    # center = np.asarray(center) * m + centroid
-    # return r1* m, r2* m, height* m, SE3(R) * SE3(center)
-    return r1, r2, height, SE3(R) * SE3(center)
+    return r1 * m, r2 * m, height * m, SE3(centroid) * SE3(R) * SE3(np.asarray(center) * m)
 
 def fit_ellipsoid(pcd):
     points, m, centroid = pc_normalize(np.asarray(pcd.points))
@@ -227,11 +225,12 @@ def fit_ellipsoid(pcd):
     return a*m, b*m, c*m, T
 
 if __name__ == "__main__":
-    test = 2 # 0: cube, 1: cone, 2: ellipsoid
-    point_cloud = o3d.io.read_point_cloud("../../../data/outputs/test2.ply")
+    test = 1 # 0: cube, 1: cone, 2: ellipsoid
+    point_cloud = o3d.io.read_point_cloud("../../../data/outputs/pick.ply")
+    # point_cloud = o3d.io.read_point_cloud("../../../data/outputs/test.ply")
     point_cloud.estimate_normals()
-    camera = [0,0,800]
-    point_cloud.orient_normals_towards_camera_location(camera)
+    # camera = [0,0,800]
+    # point_cloud.orient_normals_towards_camera_location(camera)
     if len(np.asarray(point_cloud.points)) > 5000:
         pcd = point_cloud.farthest_point_down_sample(5000)
     else:

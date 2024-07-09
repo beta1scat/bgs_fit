@@ -289,7 +289,7 @@ class NormalLeastSquaresModel:
         data shape is (n, 3)
     """
     def fit(self, data):
-        init_guess = np.array([0.0, 0.0, 1.0])
+        init_guess = np.array([0.57735027, 0.57735027, 0.57735027])
         data_size = len(data)
         if data_size > 100:
             data = data[np.random.choice(data_size, 100, replace=False)]
@@ -314,7 +314,7 @@ class ConeAxisLeastSquaresModel:
     """
     def fit(self, data):
         data_size = len(data)
-        init_guess = np.random.rand(3)
+        init_guess = np.array([0.57735027, 0.57735027, 0.57735027]) # [1,1,1] normalized
         result = scipy.optimize.minimize(self.angle_diff_variance, init_guess, args=(data)) # 优化搜索使夹角余弦方差最小
         vector = result.x / np.linalg.norm(result.x)
         angle = np.max(np.arccos(np.dot(data, vector)))
@@ -342,10 +342,9 @@ def checkPickPoseFor2FingerGripper(pcd, poses, fingerRange, t = 10):
         fileteredPoses - poses after filter
     """
     pts = np.asarray(pcd)
-    halfFingerRange = np.array(fingerRange) / 2
     filteredPoses = []
     for pose in poses:
-        fingerObb = o3d.geometry.OrientedBoundingBox(pose.t, pose.R, halfFingerRange)
+        fingerObb = o3d.geometry.OrientedBoundingBox(pose.t, pose.R, np.array(fingerRange))
         idxs = fingerObb.get_point_indices_within_bounding_box(pcd.points)
         if len(idxs) > t:
             filteredPoses.append(pose)

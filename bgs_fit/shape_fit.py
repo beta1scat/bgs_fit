@@ -145,12 +145,12 @@ class MinimalService(Node):
         print(f"点数：{len(pointcloud)}")
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pointcloud)
-        pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamKNN(100))
+        pcd.estimate_normals()
         pcd_normalized = o3d.geometry.PointCloud()
         # pcd.points = o3d.utility.Vector3dVector(pointcloud)
         pts_normalized, normalized_scalse = pc_normalize(pointcloud)
         pcd_normalized.points = o3d.utility.Vector3dVector(pts_normalized)
-        pcd_normalized.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamKNN(100))
+        pcd_normalized.estimate_normals()
         camera = [0,0,800]
         pcd_normalized.orient_normals_towards_camera_location(camera)
         o3d.io.write_point_cloud("/root/ros_ws/src/data/outputs/"+"test2.ply", pcd)
@@ -181,11 +181,15 @@ class MinimalService(Node):
         pred_choice = pred.data.max(1)[1]
         print(pred)
         print(pred_choice)
-        pcd_fit = pcd.farthest_point_down_sample(5000)
+        pcd_fps = pcd.farthest_point_down_sample(5000)
+        cl, ind = pcd_fps.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
+        pcd_fit = pcd_fps.select_by_index(ind)
+        o3d.visualization.draw_geometries([pcd_fit], point_show_normal=True)
+        o3d.io.write_point_cloud("/root/ros_ws/src/data/outputs/"+"pick.ply", pcd_fit)
         if pred_choice == 0:
             a,b,c,T_cube = fit_cuboid_obb(pcd_fit)
-            poses1 = gen_cube_side_pick_poses([a*2,b*2,c*2], 1)
-            poses2 = gen_cube_center_pick_poses(a, b, c)
+            poses1 = gen_cube_center_pick_poses(a, b, c)
+            poses2 = gen_cube_side_pick_poses([a*2,b*2,c*2], 1)
             poses_geo = []
             poses = []
             for pose in poses1:
@@ -199,19 +203,18 @@ class MinimalService(Node):
                 poses.append(T_cube*pose)
                 poses_geo.append(coord)
             obb = pcd_fit.get_minimal_oriented_bounding_box()
-            poses_filterd = checkPickPoseFor2FingerGripper(pcd_fit, poses, [0.05, 0.02, 0.02], 10)
+            poses_filterd = checkPickPoseFor2FingerGripper(pcd_fit, poses, [0.02, 0.07, 0.02], 10)
             print(f"len(poses): {len(poses)}")
             print(f"len(poses_filterd): {len(poses_filterd)}")
             poses = poses_filterd
-            coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
-            coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
+            coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
+            coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=[0, 0, 0])
             coord_frame.transform(T_cube)
             o3d.visualization.draw_geometries([*poses_geo, obb, pcd_fit, coord_frame, coord_frame_origin])
         elif pred_choice == 1:
-            o3d.io.write_point_cloud("/root/ros_ws/src/data/outputs/"+"pick.ply", pcd_fit)
             r1, r2, height, T_cone = fit_frustum_cone_normal(pcd_fit)
-            poses1 = gen_cone_side_pick_poses(height, r1, r2, 4)
-            poses2 = gen_cone_center_pick_poses(height, 4)
+            poses1 = gen_cone_center_pick_poses(height, 4)
+            poses2 = gen_cone_side_pick_poses(height, r1, r2, 4)
             poses_geo = []
             poses = []
             for pose in poses1:
@@ -224,7 +227,7 @@ class MinimalService(Node):
                 coord.transform(T_cone*pose)
                 poses.append(T_cone*pose)
                 poses_geo.append(coord)
-            poses_filterd = checkPickPoseFor2FingerGripper(pcd_fit, poses, [0.05, 0.02, 0.02], 10)
+            poses_filterd = checkPickPoseFor2FingerGripper(pcd_fit, poses, [0.02, 0.07, 0.02], 10)
             print(f"len(poses): {len(poses)}")
             print(f"len(poses_filterd): {len(poses_filterd)}")
             poses = poses_filterd
@@ -233,30 +236,29 @@ class MinimalService(Node):
             fit_cone_pcd.points = o3d.utility.Vector3dVector(fit_cone_points)
             fit_cone_pcd.paint_uniform_color([0, 0, 1])
             fit_cone_pcd.transform(T_cone)
-            coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
+            coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=[0, 0, 0])
             coord_frame.transform(T_cone)
             coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
             o3d.visualization.draw_geometries([*poses_geo, fit_cone_pcd, pcd_fit, coord_frame, coord_frame_origin], point_show_normal=False)
         elif pred_choice == 2:
             a, b, c, T_ellip = fit_ellipsoid(pcd_fit)
             r1, r2, height, T_cone = fit_frustum_cone_normal(pcd_fit, True)
-            # o3d.io.write_point_cloud("/root/ros_ws/src/data/outputs/"+"pick.ply", pcd_fit)
             poses_geo = []
-            elli_poses = gen_ellipsoid_center_pick_poses(4, [0, 0, 0])
-            elli_poses2 = gen_cone_side_pick_poses(height, r1, r2, 4)
+            pose1 = gen_ellipsoid_center_pick_poses(4, [0, 0, 0])
+            pose2 = gen_cone_side_pick_poses(height, r1, r2, 4)
             poses = []
-            for pose in elli_poses:
+            for pose in pose1:
                 coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.02, origin=[0, 0, 0])
                 coord.transform(T_ellip*pose)
                 poses.append(SE3(T_ellip.t)*pose)
                 poses.append(T_ellip*pose)
                 poses_geo.append(coord)
-            for pose in elli_poses2:
+            for pose in pose2:
                 coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.02, origin=[0, 0, 0])
                 coord.transform(T_cone*pose)
                 poses.append(T_cone*pose)
                 poses_geo.append(coord)
-            poses_filterd = checkPickPoseFor2FingerGripper(pcd_fit, poses, [0.05, 0.02, 0.02], 10)
+            poses_filterd = checkPickPoseFor2FingerGripper(pcd_fit, poses, [0.02, 0.07, 0.02], 10)
             print(f"len(poses): {len(poses)}")
             print(f"len(poses_filterd): {len(poses_filterd)}")
             poses = poses_filterd
@@ -265,21 +267,35 @@ class MinimalService(Node):
             fit_ellipsoid_pcd.points = o3d.utility.Vector3dVector(fit_ellipsoid_points)
             fit_ellipsoid_pcd.paint_uniform_color([0, 0, 1])
             fit_ellipsoid_pcd.transform(T_ellip)
-            coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
-            coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
+            coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
+            coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=[0, 0, 0])
             coord_frame.transform(T_ellip)
             o3d.visualization.draw_geometries([*poses_geo, fit_ellipsoid_pcd, pcd_fit, coord_frame, coord_frame_origin], point_show_normal=False)
         else:
             print(f"类型错误")
-
+        poses_geo = []
+        for pose in poses:
+            coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.02, origin=[0, 0, 0])
+            coord.transform(pose)
+            poses_geo.append(coord)
+        o3d.visualization.draw_geometries([*poses_geo, pcd_fit], point_show_normal=False)
         # # Unit is meter
         # tool_coordinate = SE3.Trans([0, 0, 0.2])
         # cam_in_base = SE3.Trans([0.35, -0.3, 1]) * UQ([0.0, 0.707, -0.707, 0.0]).SE3()
-        poses = filter_pose_by_axis_diff(poses, 2, [0, 0, 1], np.pi/4)
+        poses_diff_filter = filter_pose_by_axis_diff(poses, 2, [0, 0, 1], np.pi/4)
+        print(f"Final len(poses): {len(poses_diff_filter)}")
+        poses = poses_diff_filter
+        poses_geo = []
+        for pose in poses:
+            coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.02, origin=[0, 0, 0])
+            coord.transform(pose)
+            poses_geo.append(coord)
+        o3d.visualization.draw_geometries([*poses_geo, pcd_fit], point_show_normal=False)
         poses_path = os.path.join(base_path, "poses.txt")
         poses_AA = []
         for pose in poses:
-            pose = pose * SE3.Rt(SO3.Rz(np.pi/2), [0, 0, 0.01])
+            # pose = pose * SE3.Rt(SO3.Rz(np.pi/2), [0, 0, 0.01])
+            pose = pose * SE3([0, 0, 0.01])
             angvec = pose.angvec()[0] * pose.angvec()[1]
             poses_AA.append([*(pose.t.tolist()), pose.UnitQuaternion().s, *(pose.UnitQuaternion().v)])
         with open(poses_path, 'w+') as f:
