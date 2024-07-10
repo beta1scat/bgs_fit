@@ -25,10 +25,10 @@ def gen_cube_side_pick_poses(size, num_each_side):
                 xL[3, idx2] = -1
                 zL[0, idx2] = (-1)**(combinations[idx_t][1]+1)
                 zL[1, idx1] = (-1)**(combinations[idx_t][0]+1)
-                pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[0], z=zL[0]), tL[idx_n+idx_t*num_each_side]))
-                pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[1], z=zL[0]), tL[idx_n+idx_t*num_each_side]))
-                pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[2], z=zL[1]), tL[idx_n+idx_t*num_each_side]))
-                pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[3], z=zL[1]), tL[idx_n+idx_t*num_each_side]))
+                pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[0], z=zL[0])*SE3.Rz(np.pi/2), tL[idx_n+idx_t*num_each_side]))
+                pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[1], z=zL[0])*SE3.Rz(np.pi/2), tL[idx_n+idx_t*num_each_side]))
+                pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[2], z=zL[1])*SE3.Rz(np.pi/2), tL[idx_n+idx_t*num_each_side]))
+                pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[3], z=zL[1])*SE3.Rz(np.pi/2), tL[idx_n+idx_t*num_each_side]))
     return pick_poses
 
 def gen_cube_center_pick_poses(a=0, b=0, c=0, center=[0.0, 0.0, 0.0]):
@@ -84,10 +84,10 @@ def gen_cone_side_pick_poses(height, top_r, bottom_r, num_each_side):
             top_T2 = SE3.Rt(SO3.TwoVectors(x=top_xL, z=top_zL), [top_x, top_y, top_z])
             bottom_T = SE3.Rt(SO3.TwoVectors(x=bottom_xL, z=bottom_zL)*SO3.Ry(-alpha), [bottom_x, bottom_y, bottom_z])
             bottom_T2 = SE3.Rt(SO3.TwoVectors(x=bottom_xL, z=bottom_zL), [bottom_x, bottom_y, bottom_z])
-        pick_poses.append(top_T)
-        pick_poses.append(top_T2)
-        pick_poses.append(bottom_T)
-        pick_poses.append(bottom_T2)
+        pick_poses.append(top_T*SE3.Rz(np.pi/2))
+        pick_poses.append(top_T2*SE3.Rz(np.pi/2))
+        pick_poses.append(bottom_T*SE3.Rz(np.pi/2))
+        pick_poses.append(bottom_T2*SE3.Rz(np.pi/2))
     return pick_poses
 
 def gen_cone_center_pick_poses(height, num_each_position, center=[0,0,0]):
@@ -152,8 +152,6 @@ def gen_ellipsoid_side_pick_poses(num, a, b, c, T, pcd):
     minPtIdxInMainDir = np.argmax(pts[:, mainIdx])
     minPt = pts[minPtIdxInMainDir]
     maxPtRef = -1 * minPt
-    print(minPt)
-    print(maxPtRef)
     distance2maxPtRef = np.linalg.norm(pts - maxPtRef)
     # correctAngle = np.arcsin(np.min(distance2maxPtRef) / 2*np.linalg.norm(minPt))
     maxPt = pts[np.argmin(distance2maxPtRef)]
@@ -196,8 +194,8 @@ def gen_ellipsoid_side_pick_poses(num, a, b, c, T, pcd):
         x_dir[mainIdx] = 0
         T_pick1 = SE3.Rt(SO3.TwoVectors(x=x_dir, z=z_dir), xyz)
         T_pick2 = SE3.Rt(SO3.TwoVectors(x=-1*x_dir, z=z_dir), xyz)
-        pick_poses.append(T*T_correct*T_pick1)
-        pick_poses.append(T*T_correct*T_pick2)
+        pick_poses.append(T*T_correct*T_pick1*SE3.Rz(np.pi/2))
+        pick_poses.append(T*T_correct*T_pick2*SE3.Rz(np.pi/2))
     return pick_poses
 
 def gen_ellipsoid_center_pick_poses(num_each_direction, center=[0,0,0]):
@@ -241,7 +239,7 @@ def test_cube_poses():
 def test_cone_poses():
     # pcd_fit = o3d.io.read_point_cloud("/root/ros_ws/src/data/outputs/pick.ply")
     # r1, r2, height, T = fit_frustum_cone_normal(pcd_fit)
-    height, top_r, bottom_r = [1.2, 1.0, 1.6]
+    height, r1, r2 = [1.2, 1.0, 1.6]
     poses1 = gen_cone_side_pick_poses(height, r1, r2, 100)
     poses2 = gen_cone_center_pick_poses(height, 10)
     poses = poses1 + poses2
@@ -256,7 +254,8 @@ def test_cone_poses():
     o3d.visualization.draw_geometries(scene)
 
 def test_ellipsoid_poses():
-    # pcd_fit = o3d.io.read_point_cloud("/root/ros_ws/src/data/outputs/pick.ply")
+    # pcd_fit = o3d.io.read_point_cloud("/root/ros_ws/src/data/outputs/test.ply")
+    # pcd_fit = pcd_fit.farthest_point_down_sample(5000)
     # a, b, c, T = fit_ellipsoid(pcd_fit)
     # poses = gen_ellipsoid_side_pick_poses(10, a, b, c, T, pcd_fit)
     poses = gen_ellipsoid_center_pick_poses(10)
@@ -273,5 +272,5 @@ def test_ellipsoid_poses():
 if __name__ == "__main__":
     model_path = "../../../data/outputs"
     # test_cube_poses()
-    test_cone_poses()
+    # test_cone_poses()
     # test_ellipsoid_poses()

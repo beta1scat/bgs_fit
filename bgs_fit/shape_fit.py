@@ -295,7 +295,7 @@ class MinimalService(Node):
         poses_AA = []
         for pose in poses:
             # pose = pose * SE3.Rt(SO3.Rz(np.pi/2), [0, 0, 0.01])
-            pose = pose * SE3([0, 0, 0.01])
+            pose = pose
             angvec = pose.angvec()[0] * pose.angvec()[1]
             poses_AA.append([*(pose.t.tolist()), pose.UnitQuaternion().s, *(pose.UnitQuaternion().v)])
         with open(poses_path, 'w+') as f:
