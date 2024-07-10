@@ -25,10 +25,10 @@ def gen_cube_side_pick_poses(size, num_each_side):
                 xL[3, idx2] = -1
                 zL[0, idx2] = (-1)**(combinations[idx_t][1]+1)
                 zL[1, idx1] = (-1)**(combinations[idx_t][0]+1)
-                pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[0], z=zL[0])*SE3.Rz(np.pi/2), tL[idx_n+idx_t*num_each_side]))
-                pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[1], z=zL[0])*SE3.Rz(np.pi/2), tL[idx_n+idx_t*num_each_side]))
-                pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[2], z=zL[1])*SE3.Rz(np.pi/2), tL[idx_n+idx_t*num_each_side]))
-                pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[3], z=zL[1])*SE3.Rz(np.pi/2), tL[idx_n+idx_t*num_each_side]))
+                pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[0], z=zL[0]), tL[idx_n+idx_t*num_each_side])*SE3.Rz(np.pi/2))
+                pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[1], z=zL[0]), tL[idx_n+idx_t*num_each_side])*SE3.Rz(np.pi/2))
+                pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[2], z=zL[1]), tL[idx_n+idx_t*num_each_side])*SE3.Rz(np.pi/2))
+                pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[3], z=zL[1]), tL[idx_n+idx_t*num_each_side])*SE3.Rz(np.pi/2))
     return pick_poses
 
 def gen_cube_center_pick_poses(a=0, b=0, c=0, center=[0.0, 0.0, 0.0]):
