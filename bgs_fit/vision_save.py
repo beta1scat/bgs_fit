@@ -10,7 +10,7 @@ from sensor_msgs.msg import PointCloud2
 from cv_bridge import CvBridge
 
 from sensor_msgs_py import point_cloud2 as pc2
-from gazebo_msgs.srv import GetModelList, GetEntityState
+from gazebo_msgs.msg import ModelStates
 
 imageIsDone = False
 depthImageIsDone = False
@@ -91,17 +91,12 @@ class MinimalSubscriber(Node):
             1)
         self.pointsSubscription  # prevent unused variable warning
 
-        # Get model poses
-        self.get_model_list_client = self.create_client(GetModelList, '/get_model_list')
-        self.get_entity_state_client = self.create_client(GetEntityState, '/ros2_grasp/get_entity_state')
-
-        while not self.get_model_list_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info('Service /get_model_list not available, waiting again...')
-
-        while not self.get_entity_state_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info('Service /ros2_grasp/get_entity_state not available, waiting again...')
-        self.file_name = os.path.join(self.savePath, "model_poses.json")
-        self.get_model_list()
+        self.posesSubscription = self.create_subscription(
+            ModelStates,
+            '/ros2_grasp/model_states',
+            self.poses_listener_callback,
+            1)
+        self.posesSubscription
 
     def imageListener_callback(self, msg):
         global imageIsDone
@@ -172,55 +167,32 @@ class MinimalSubscriber(Node):
         self.get_logger().info("Points saved to %s" % points_file_path)
         pcdIsDone = True
 
-    def get_model_list(self):
-        req = GetModelList.Request()
-        future = self.get_model_list_client.call_async(req)
-        future.add_done_callback(self.model_list_callback)
-
-    def model_list_callback(self, future):
+    def poses_listener_callback(self, msg):
         try:
-            response = future.result()
-            self.model_names = response.model_names
-            self.get_logger().info(f"Found models: {self.model_names}")
-            self.models_info = {}
-            self.get_model_states()
-        except Exception as e:
-            self.get_logger().error(f'Service call failed {e}')
-
-    def get_model_states(self):
-        for model_name in self.model_names:
-            req = GetEntityState.Request()
-            req.name = model_name
-            future = self.get_entity_state_client.call_async(req)
-            future.add_done_callback(lambda future, model_name=model_name: self.entity_state_callback(future, model_name))
-
-    def entity_state_callback(self, future, model_name):
-        try:
-            response = future.result()
-            self.models_info[model_name] = {
-                'position': {
-                    'x': response.state.pose.position.x,
-                    'y': response.state.pose.position.y,
-                    'z': response.state.pose.position.z
-                },
-                'orientation': {
-                    'x': response.state.pose.orientation.x,
-                    'y': response.state.pose.orientation.y,
-                    'z': response.state.pose.orientation.z,
-                    'w': response.state.pose.orientation.w
+            numModels = len(msg.name)
+            models_info = {}
+            for idx in range(numModels):
+                models_info[msg.name[idx]] = {
+                    'position': {
+                        'x': msg.pose[idx].position.x,
+                        'y': msg.pose[idx].position.y,
+                        'z': msg.pose[idx].position.z
+                    },
+                    'orientation': {
+                        'x': msg.pose[idx].orientation.x,
+                        'y': msg.pose[idx].orientation.y,
+                        'z': msg.pose[idx].orientation.z,
+                        'w': msg.pose[idx].orientation.w
+                    }
                 }
-            }
-            if len(self.models_info) == len(self.model_names):
-                self.save_to_json()
+            poses_file_name = os.path.join(self.savePath, "model_poses.json")
+            with open(poses_file_name, 'w') as json_file:
+                json.dump(models_info, json_file, indent=4)
+            self.get_logger().info(f'Model states saved to {poses_file_name}')
+            global posesIsDone
+            posesIsDone = True
         except Exception as e:
             self.get_logger().error(f'Service call failed {e}')
-
-    def save_to_json(self):
-        with open(self.file_name, 'w') as json_file:
-            json.dump(self.models_info, json_file, indent=4)
-        self.get_logger().info(f'Model states saved to {self.file_name}')
-        global posesIsDone
-        posesIsDone = True
 
 def main(args=None):
     rclpy.init(args=args)
@@ -229,7 +201,7 @@ def main(args=None):
     while not (imageIsDone and depthImageIsDone and cameraInfoIsDone and pcdIsDone and posesIsDone):
         rclpy.spin_once(minimal_subscriber, timeout_sec=0)
         # rate.sleep()
-    
+
     # rclpy.spin(minimal_subscriber)
 
     # Destroy the node explicitly
