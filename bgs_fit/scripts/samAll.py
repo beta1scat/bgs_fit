@@ -1,9 +1,20 @@
+import sys
+from PyQt5 import QtWidgets
+QtWidgets.QApplication(sys.argv)
+import os
 import cv2
+import json
 import torch
 import importlib
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
+import random
+import matplotlib.colors as mcolors
+
+# 获取 CSS4 颜色名称列表
+css4_colors = list(mcolors.CSS4_COLORS.keys())
 
 def show_anns(anns):
     if len(anns) == 0:
@@ -14,10 +25,24 @@ def show_anns(anns):
 
     img = np.ones((sorted_anns[0]['segmentation'].shape[0], sorted_anns[0]['segmentation'].shape[1], 4))
     img[:,:,3] = 0
-    for ann in sorted_anns:
-        m = ann['segmentation']
-        color_mask = np.concatenate([np.random.random(3), [0.35]])
+    numAnn= len(sorted_anns)
+    for idx in range(numAnn):
+        m = sorted_anns[idx]['segmentation']
+        c = random.choice(css4_colors)
+        color_mask = np.concatenate([mcolors.to_rgb(c), [0.5]])
         img[m] = color_mask
+        # point_coords = sorted_anns[idx]['point_coords'][0]
+        bbox = sorted_anns[idx]['bbox']
+        ax.add_patch(
+            patches.Rectangle(
+                (bbox[0], bbox[1]),   # (x,y)
+                bbox[2],          # width
+                bbox[3],          # height
+                facecolor='none', edgecolor=c, linewidth=2
+            )
+        )
+        ax.text(bbox[0] + (bbox[2] / 2) - 15, bbox[1] + (bbox[3] / 2) - 15, f"{idx}", size = 15, c=c)
+        ax.text(bbox[0] + (bbox[2] / 2), bbox[1] + (bbox[3] / 2), f"{sorted_anns[idx]['stability_score']:.2f}", size = 15)
     ax.imshow(img)
 
 def depth_to_pointcloud(depth_image, fx, fy, cx, cy):
@@ -38,41 +63,143 @@ def pc_normalize(pc):
     pc = pc / m
     return pc, m
 
+data_path = "../../../data/0005"
+model_path = "../../../data/models"
 
 # 载入 SAM 模型
 sam_model_type = "vit_h"  # or vit_b, vit_l based on the model you have
-sam_checkpoint_path = "../../data/models/sam_vit_h_4b8939.pth"  # 替换为你的模型路径
+sam_checkpoint_path = os.path.join(model_path,  "sam_vit_h_4b8939.pth")  # 替换为你的模型路径
 sam = sam_model_registry[sam_model_type](checkpoint=sam_checkpoint_path)
 sam = sam.to(device = "cuda")
-mask_generator = SamAutomaticMaskGenerator(sam)
+"""
+def __init__(
+    self,
+    model: Sam,
+    points_per_side: Optional[int] = 32,
+    points_per_batch: int = 64,
+    pred_iou_thresh: float = 0.88,
+    stability_score_thresh: float = 0.95,
+    stability_score_offset: float = 1.0,
+    box_nms_thresh: float = 0.7,
+    crop_n_layers: int = 0,
+    crop_nms_thresh: float = 0.7,
+    crop_overlap_ratio: float = 512 / 1500,
+    crop_n_points_downscale_factor: int = 1,
+    point_grids: Optional[List[np.ndarray]] = None,
+    min_mask_region_area: int = 0,
+    output_mode: str = "binary_mask",
+) -> None:
 
-classifier_model_type = "pointnet2_cls_ssg"
-num_class = 3
-use_normals = True
-model = importlib.import_module(classifier_model_type)
-classifier = model.get_model(num_class, normal_channel=use_normals)
-classifier = classifier.cuda()
-classifier_checkpoint_path = '../../data/models/best_model_ssg.pth'
-classifier_checkpoint = torch.load(classifier_checkpoint_path)
-classifier.load_state_dict(classifier_checkpoint['model_state_dict'])
-classifier.eval()
+Using a SAM model, generates masks for the entire image.
+Generates a grid of point prompts over the image, then filters
+low quality and duplicate masks. The default settings are chosen
+for SAM with a ViT-H backbone.
 
-# 读取图片 & 深度图
-image_path = "../../data/image.png"  # 替换为你的图片路径
-depth_image_path = '../../data/depth.tiff'
+Arguments:
+  model (Sam): The SAM model to use for mask prediction.
+  points_per_side (int or None): The number of points to be sampled
+    along one side of the image. The total number of points is
+    points_per_side**2. If None, 'point_grids' must provide explicit
+    point sampling.
+  points_per_batch (int): Sets the number of points run simultaneously
+    by the model. Higher numbers may be faster but use more GPU memory.
+  pred_iou_thresh (float): A filtering threshold in [0,1], using the
+    model's predicted mask quality.
+  stability_score_thresh (float): A filtering threshold in [0,1], using
+    the stability of the mask under changes to the cutoff used to binarize
+    the model's mask predictions.
+  stability_score_offset (float): The amount to shift the cutoff when
+    calculated the stability score.
+  box_nms_thresh (float): The box IoU cutoff used by non-maximal
+    suppression to filter duplicate masks.
+  crop_n_layers (int): If >0, mask prediction will be run again on
+    crops of the image. Sets the number of layers to run, where each
+    layer has 2**i_layer number of image crops.
+  crop_nms_thresh (float): The box IoU cutoff used by non-maximal
+    suppression to filter duplicate masks between different crops.
+  crop_overlap_ratio (float): Sets the degree to which crops overlap.
+    In the first crop layer, crops will overlap by this fraction of
+    the image length. Later layers with more crops scale down this overlap.
+  crop_n_points_downscale_factor (int): The number of points-per-side
+    sampled in layer n is scaled down by crop_n_points_downscale_factor**n.
+  point_grids (list(np.ndarray) or None): A list over explicit grids
+    of points used for sampling, normalized to [0,1]. The nth grid in the
+    list is used in the nth crop layer. Exclusive with points_per_side.
+  min_mask_region_area (int): If >0, postprocessing will be applied
+    to remove disconnected regions and holes in masks with area smaller
+    than min_mask_region_area. Requires opencv.
+  output_mode (str): The form masks are returned in. Can be 'binary_mask',
+    'uncompressed_rle', or 'coco_rle'. 'coco_rle' requires pycocotools.
+    For large resolutions, 'binary_mask' may consume large amounts of
+    memory.
+"""
+while True:
+    user_input = input("请输入要调整的参数： ")
+    if user_input == 'q':
+        break
+    mask_generator = SamAutomaticMaskGenerator(
+        model=sam,
+        points_per_side=6,
+        pred_iou_thresh=0.95,
+        stability_score_thresh=0.98,
+        crop_n_layers=0,
+        box_nms_thresh=0.7,
+        crop_nms_thresh=0.7,
+        crop_overlap_ratio=512/1500,
+        crop_n_points_downscale_factor=1,
+        min_mask_region_area=5000,  # Requires open-cv to run post-processing
+    )
 
-image = cv2.imread(image_path)
-print(f"image size: {image.shape}")
-image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    # classifier_model_type = "pointnet2_cls_ssg"
+    # num_class = 3
+    # use_normals = True
+    # model = importlib.import_module(classifier_model_type)
+    # classifier = model.get_model(num_class, normal_channel=use_normals)
+    # classifier = classifier.cuda()
+    # classifier_checkpoint_path = os.path.join(model_path,  "best_model_ssg.pth")  # 替换为你的模型路径
+    # classifier_checkpoint = torch.load(classifier_checkpoint_path)
+    # classifier.load_state_dict(classifier_checkpoint['model_state_dict'])
+    # classifier.eval()
 
-masks = mask_generator.generate(image)
-print(len(masks))
-print(masks[0].keys())
-plt.figure(figsize=(20,20))
-plt.imshow(image)
-show_anns(masks)
-plt.axis('off')
-plt.show() 
+    # 读取图片 & 深度图
+    image_path = os.path.join(data_path, "image.png")  # 替换为你的图片路径
+    depth_image_path = os.path.join(data_path, "depth.tiff")
+
+    image = cv2.imread(image_path)
+    # cv2.imshow("image", image)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+    print(f"image size: {image.shape}")
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    # cv2.imshow("image_rgb", image_rgb)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+
+    masks = mask_generator.generate(image)
+    img = image
+    for mask in masks:
+        m = mask['segmentation']
+        color_mask = np.array([0,0,0])
+        img[m] = color_mask
+    plt.imshow(img)
+    masks2 = mask_generator.generate(img)
+    total_mask = masks + masks2
+    # with open(os.path.join(data_path, "mask.json"), 'w') as file:
+    #     json.dump(masks, file, indent=4)
+    # print(masks)
+    print(f"len(masks): {len(masks)}")
+    # print(f"masks[0].keys(): {masks[0].keys()}")
+    # print(masks2)
+    print(f"len(masks): {len(masks2)}")
+    # print(f"masks[0].keys(): {masks2[0].keys()}")
+    # print(total_mask)
+    print(f"len(masks): {len(total_mask)}")
+    print(f"masks[0].keys(): {total_mask[0].keys()}")
+    plt.figure(figsize=(20,20))
+    plt.imshow(image_rgb)
+    show_anns(total_mask)
+    plt.axis('off')
+    plt.show()
 
 
 
