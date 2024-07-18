@@ -15,7 +15,11 @@ import matplotlib.colors as mcolors
 
 # 获取 CSS4 颜色名称列表
 css4_colors = list(mcolors.CSS4_COLORS.keys())
-
+def convert_rgb_to_255(rgb):
+    """
+    将 0-1 范围的 RGB 值转换为 0-255 范围的 RGB 值。
+    """
+    return [int(x * 255) for x in rgb]
 def show_anns(anns):
     if len(anns) == 0:
         return
@@ -30,7 +34,7 @@ def show_anns(anns):
         m = sorted_anns[idx]['segmentation']
         c = random.choice(css4_colors)
         color_mask = np.concatenate([mcolors.to_rgb(c), [0.5]])
-        img[m] = color_mask
+        img[m] = convert_rgb_to_255(color_mask)
         # point_coords = sorted_anns[idx]['point_coords'][0]
         bbox = sorted_anns[idx]['bbox']
         ax.add_patch(
@@ -41,9 +45,10 @@ def show_anns(anns):
                 facecolor='none', edgecolor=c, linewidth=2
             )
         )
-        ax.text(bbox[0] + (bbox[2] / 2) - 15, bbox[1] + (bbox[3] / 2) - 15, f"{idx}", size = 15, c=c)
-        ax.text(bbox[0] + (bbox[2] / 2), bbox[1] + (bbox[3] / 2), f"{sorted_anns[idx]['stability_score']:.2f}", size = 15)
+        # ax.text(bbox[0] + (bbox[2] / 2) - 15, bbox[1] + (bbox[3] / 2) - 15, f"{idx}", size = 15, c=c)
+        # ax.text(bbox[0] + (bbox[2] / 2), bbox[1] + (bbox[3] / 2), f"{sorted_anns[idx]['stability_score']:.2f}", size = 15)
     ax.imshow(img)
+    cv2.imwrite("../../../data/0005/sam.png", img[:,:,:3])
 
 def depth_to_pointcloud(depth_image, fx, fy, cx, cy):
     height, width = depth_image.shape
