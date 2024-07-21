@@ -13,6 +13,65 @@ def pc_normalize(pc):
     pc = pc / m
     return pc, m, centroid
 
+def generate_cube_points(size=(10, 10, 10), delta=0.1, points_density=1, total_points=10000):
+    assert min(size) > 0, "cube(x, y, z) should > 0"
+    assert points_density >= 0, "number of points density should >= 0"
+    assert total_points > 0, "number of points should > 0"
+    half_size = np.array(size) / 2
+    points = []
+    # top and bottom, 2 surfaces
+    area1 = size[0] * size[1]
+    area2 = size[1] * size[2]
+    area3 = size[0] * size[2]
+    total_area = 2 * (area1 + area2 + area3)
+    num_points_tb = 0
+    if points_density != 0:
+        num_points_tb = int(size[0] * size[1] * points_density)
+    else:
+        num_points_tb = int(total_points * (area1 / total_area))
+    for _ in range(num_points_tb):
+        x = np.random.uniform(-1, 1) * half_size[0]
+        y = np.random.uniform(-1, 1) * half_size[1]
+        z = half_size[2]
+        # points.append([x + np.random.uniform(-1, 1) * delta, y + np.random.uniform(-1, 1) * delta, z + np.random.uniform(-1, 1) * delta])
+    for _ in range(num_points_tb):
+        x = np.random.uniform(-1, 1) * half_size[0]
+        y = np.random.uniform(-1, 1) * half_size[1]
+        z = -half_size[2]
+        # points.append([x + np.random.uniform(-1, 1) * delta, y + np.random.uniform(-1, 1) * delta, z + np.random.uniform(-1, 1) * delta])
+    # vertical 4 surfaces
+    num_point_yz = 0
+    if points_density != 0:
+        num_point_yz = int(size[1] * size[2] * points_density)
+    else:
+        num_point_yz = int(total_points * (area2 / total_area))
+    for _ in range(num_point_yz):
+        x = half_size[0]
+        y = np.random.uniform(-1, 1) * half_size[1]
+        z = np.random.uniform(-1, 1) * half_size[2]
+        points.append([x + np.random.uniform(-1, 1) * delta, y + np.random.uniform(-1, 1) * delta, z + np.random.uniform(-1, 1) * delta])
+    for _ in range(num_point_yz):
+        x = -half_size[0]
+        y = np.random.uniform(-1, 1) * half_size[1]
+        z = np.random.uniform(-1, 1) * half_size[2]
+        points.append([x + np.random.uniform(-1, 1) * delta, y + np.random.uniform(-1, 1) * delta, z + np.random.uniform(-1, 1) * delta])
+    num_point_xz = 0
+    if points_density != 0:
+        num_point_xz = int(size[0] * size[2] * points_density)
+    else:
+        num_point_xz = int(total_points * (area3 / total_area))
+    for _ in range(num_point_xz):
+        y = half_size[1]
+        x = np.random.uniform(-1, 1) * half_size[0]
+        z = np.random.uniform(-1, 1) * half_size[2]
+        points.append([x + np.random.uniform(-1, 1) * delta, y + np.random.uniform(-1, 1) * delta, z + np.random.uniform(-1, 1) * delta])
+    for _ in range(num_point_xz):
+        y = -half_size[1]
+        x = np.random.uniform(-1, 1) * half_size[0]
+        z = np.random.uniform(-1, 1) * half_size[2]
+        points.append([x + np.random.uniform(-1, 1) * delta, y + np.random.uniform(-1, 1) * delta, z + np.random.uniform(-1, 1) * delta])
+    return points
+
 def generate_cone_points(r_bottom=10, r_top_ratio=0.5, height=20, delta=0.1, points_density=1, total_points=10000):
     assert r_bottom > 0, "cone r_top should > 0"
     assert height > 0, "cone height should > 0"
@@ -317,7 +376,7 @@ class ConeAxisLeastSquaresModel:
         init_guess = np.array([0.57735027, 0.57735027, 0.57735027]) # [1,1,1] normalized
         result = scipy.optimize.minimize(self.angle_diff_variance, init_guess, args=(data)) # 优化搜索使夹角余弦方差最小
         vector = result.x / np.linalg.norm(result.x)
-        angle = np.max(np.arccos(np.dot(data, vector)))
+        angle = np.mean(np.arccos(np.dot(data, vector)))
         return vector, angle
     def get_error(self, data, model):
         vector, angle = model
@@ -410,3 +469,32 @@ def sort_pose_by_rot_diff(poses, ref_pose):
     sorted_indices = np.argsort(differences)
     sorted_poses = [poses[i] for i in sorted_indices]
     return sorted_poses
+
+
+def filter_pose_by_bin_side(poses, bin_size, ignore_size, bin_pose, threshold):
+    # bin_pose is center poses
+    half_size = np.asarray(bin_size) / 2
+    half_ignore_size = np.asarray(ignore_size) / 2
+    binXp = bin_pose.n
+    binXn = -1*bin_pose.n
+    binYp = bin_pose.o
+    binYn = -1*bin_pose.o
+    pose_filtered = []
+    for pose in poses:
+        pose_in_bin = bin_pose.inv() * pose
+        if abs(pose_in_bin.t[0]) < half_ignore_size[0] and abs(pose_in_bin.t[1]) < half_ignore_size[1]:
+            pose_filtered.append(pose)
+            continue
+        if half_size[0] - abs(pose_in_bin.t[0]) < half_size[1] - abs(pose_in_bin.t[1]):
+            if pose_in_bin.t[0] > 0:
+                angle_between_X = np.arccos(np.dot(bin_pose.n, pose_in_bin.n))
+            else:
+                angle_between_X = np.arccos(np.dot(-1*bin_pose.n, pose_in_bin.n))
+        else:
+            if pose_in_bin.t[1] > 0:
+                angle_between_X = np.arccos(np.dot(bin_pose.o, pose_in_bin.n))
+            else:
+                angle_between_X = np.arccos(np.dot(-1*bin_pose.o, pose_in_bin.n))
+        if angle_between_X < threshold:
+            pose_filtered.append(pose)
+    return pose_filtered
