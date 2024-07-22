@@ -31,17 +31,20 @@ def gen_cube_side_pick_poses(size, num_each_side):
                 pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[3], z=zL[1]), tL[idx_n+idx_t*num_each_side])*SE3.Rz(np.pi/2))
     return pick_poses
 
-def gen_cube_center_pick_poses(a=0, b=0, c=0, center=[0.0, 0.0, 0.0]):
+def gen_cube_center_pick_poses(size, center=[0.0, 0.0, 0.0]):
     pick_poses = []
-    length = np.array([a, b, c])
+    half_size = np.array(size) / 2
     for idx_z in range(0,3):
+        # for pos in range(-1,2):
+        #     t = np.array([0.0, 0.0, 0.0])
+        #     t[idx_z] = half_size[idx_z] * pos
         idx1, idx2 = [i for i in range(3) if i != idx_z]
         xL = np.array([[0.0,0.0,0.0]]*4)
         zL = np.array([[0.0,0.0,0.0]]*2)
         center_top = np.array([0.0,0.0,0.0])
         center_bottom = np.array([0.0,0.0,0.0])
-        center_top[idx_z] = 1 * length[idx_z]
-        center_bottom[idx_z] = -1 * length[idx_z]
+        center_top[idx_z] = 1 * half_size[idx_z]
+        center_bottom[idx_z] = -1 * half_size[idx_z]
         zL[0, idx_z] = 1
         zL[1, idx_z] = -1
         xL[0, idx1] = 1
@@ -56,6 +59,14 @@ def gen_cube_center_pick_poses(a=0, b=0, c=0, center=[0.0, 0.0, 0.0]):
         pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[1], z=zL[1]), np.asarray(center) + center_top))
         pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[2], z=zL[1]), np.asarray(center) + center_top))
         pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[3], z=zL[1]), np.asarray(center) + center_top))
+        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[0], z=zL[0]), np.asarray(center)))
+        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[1], z=zL[0]), np.asarray(center)))
+        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[2], z=zL[0]), np.asarray(center)))
+        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[3], z=zL[0]), np.asarray(center)))
+        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[0], z=zL[1]), np.asarray(center)))
+        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[1], z=zL[1]), np.asarray(center)))
+        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[2], z=zL[1]), np.asarray(center)))
+        pick_poses.append(SE3.Rt(SO3.TwoVectors(x=xL[3], z=zL[1]), np.asarray(center)))
     return pick_poses
 
 def gen_cone_side_pick_poses(height, top_r, bottom_r, num_each_side):
@@ -220,7 +231,9 @@ def gen_ellipsoid_center_pick_poses(num_each_direction, center=[0,0,0]):
 def test_cube_poses():
     cube_size = [1.2, 1.0, 0.6]
     poses1 = gen_cube_side_pick_poses(cube_size, 2)
-    poses2 = gen_cube_center_pick_poses()
+    poses2 = gen_cube_center_pick_poses(cube_size)
+    print(len(poses1))
+    print(len(poses2))
     poses = poses1 + poses2
     cube = o3d.geometry.TriangleMesh.create_box(*cube_size)
     cube.translate(np.asarray(cube_size) / (-2))
@@ -244,12 +257,13 @@ def test_cone_poses():
     poses2 = gen_cone_center_pick_poses(height, 10)
     poses = poses1 + poses2
     scene = []
-    origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
+    origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
     scene.append(origin)
-    scene.append(pcd_fit)
+    # scene.append(pcd_fit)
     for pose in poses:
-        coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.01, origin=[0, 0, 0])
-        coord.transform(T*pose)
+        coord = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
+        # coord.transform(T*pose)
+        coord.transform(pose)
         scene.append(coord)
     o3d.visualization.draw_geometries(scene)
 
@@ -271,6 +285,6 @@ def test_ellipsoid_poses():
 
 if __name__ == "__main__":
     model_path = "../../../data/outputs"
-    # test_cube_poses()
+    test_cube_poses()
     # test_cone_poses()
     # test_ellipsoid_poses()
