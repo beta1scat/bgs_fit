@@ -193,7 +193,7 @@ def fit_frustum_cone_normal(pcd, use_poly=False):
         # plane_pcd = cluster_pcd.select_by_index(plane_inliers)
         # plane_pcd.paint_uniform_color([1,0,0])
         # o3d.visualization.draw_geometries([cluster_pcd, plane_pcd], window_name='Classified Point Clouds', point_show_normal=True)
-    if np.max(plane_points_ratio_list) > 0.6:
+    if np.max(plane_points_ratio_list) > 0.6 and len([x for x in plane_points_ratio_list if x > 0.6]) < 3:
         print(f"使用平面法向量")
         max_plane_ratio_idx = np.argmax(plane_points_ratio_list)
         cone_normal = plane_normals_list[max_plane_ratio_idx]
