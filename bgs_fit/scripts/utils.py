@@ -498,3 +498,52 @@ def filter_pose_by_bin_side(poses, bin_size, ignore_size, bin_pose, threshold):
         if angle_between_X < threshold:
             pose_filtered.append(pose)
     return pose_filtered
+
+def points_to_point_distance(points, point):
+    return np.linalg.norm(points - point, ord=2, axis=1) # 按行求坐标差的 2 范数，为点到点的距离
+
+def fit_circle(points, num_iterations, threshold=0.01):
+    points = np.asarray(points)
+    num_total_points = len(points)
+    best_circle = None
+    # best_circle_points = None
+    best_num_inliers = 0
+    remained_points_indices = None
+    for _ in range(num_iterations):
+        # 随机采样3组3个点
+        random_indices = np.random.choice(num_total_points, 3, replace=False)
+        circle_points = points[random_indices]
+        x1, x2, x3 = circle_points[0][0], circle_points[1][0], circle_points[2][0]
+        y1, y2, y3 = circle_points[0][1], circle_points[1][1], circle_points[2][1]
+        A = np.array([[2 * (x1 - x2), 2 * (y1 - y2)],
+                      [2 * (x1 - x3), 2 * (y1 - y3)],
+                      [2 * (x2 - x3), 2 * (y2 - y3)]])
+        B = np.array([[x1**2 + y1**2 - x2**2 - y2**2],
+                      [x1**2 + y1**2 - x3**2 - y3**2],
+                      [x2**2 + y2**2 - x3**2 - y3**2]])
+        X = np.linalg.lstsq(A, B, rcond=None)[0]
+        center = np.array([X[0][0], X[1][0]])
+        r = np.linalg.norm(circle_points[0] - center)
+        outliers = np.where(abs(points_to_point_distance(points, center) - r) > threshold)[0]
+        num_inliers = num_total_points - len(outliers)
+        if num_inliers > best_num_inliers:
+            best_circle = (center, r)
+            best_num_inliers = num_inliers
+            # best_circle_points = circle_points
+            remained_points_indices = outliers
+    return best_circle, best_num_inliers, remained_points_indices
+
+def find_orthogonal_vectors(normal_vector):
+    """
+    根据平面的法向量找到相互垂直的两个向量
+    """
+    # 生成两个随机向量
+    v1 = np.random.rand(3)
+    v2 = np.random.rand(3)
+    # 计算第一个向量在法向量上的投影
+    v1_proj = np.dot(v1, normal_vector) / np.linalg.norm(normal_vector) * normal_vector
+    # 计算第一个向量与投影的差，得到第一个相互垂直的向量
+    v1_ortho = v1 - v1_proj
+    # 计算第二个向量与第一个相互垂直的向量的叉乘，得到第二个相互垂直的向量
+    v2_ortho = np.cross(normal_vector, v1_ortho)
+    return v1_ortho, v2_ortho

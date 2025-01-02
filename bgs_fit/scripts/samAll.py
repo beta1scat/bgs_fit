@@ -14,6 +14,11 @@ from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamP
 import random
 import matplotlib.colors as mcolors
 
+
+data_path = "../../../data/0007"
+model_path = "../../../data/models"
+
+
 # 获取 CSS4 颜色名称列表
 css4_colors = list(mcolors.CSS4_COLORS.keys())
 def convert_rgb_to_255(rgb):
@@ -52,7 +57,7 @@ def show_anns(anns):
     img = img.astype(int)
     print(f"img: {img}")
     ax.imshow(img)
-    cv2.imwrite("../../../data/0005/sam.png", img[:,:,:3])
+    cv2.imwrite(os.path.join(data_path, "sam.png"), img[:,:,:3])
 
 def depth_to_pointcloud(depth_image, fx, fy, cx, cy):
     height, width = depth_image.shape
@@ -71,9 +76,6 @@ def pc_normalize(pc):
     m = np.max(np.sqrt(np.sum(pc**2, axis=1)))
     pc = pc / m
     return pc, m
-
-data_path = "../../../data/0005"
-model_path = "../../../data/models"
 
 # 载入 SAM 模型
 sam_model_type = "vit_h"  # or vit_b, vit_l based on the model you have
@@ -165,7 +167,7 @@ while True:
     model = importlib.import_module(classifier_model_type)
     classifier = model.get_model(num_class, normal_channel=use_normals)
     classifier = classifier.cuda()
-    classifier_checkpoint_path = os.path.join(model_path,  "best_model_ssg.pth")  # 替换为你的模型路径
+    classifier_checkpoint_path = os.path.join(model_path,  "best_model_1107.pth")  # 替换为你的模型路径
     classifier_checkpoint = torch.load(classifier_checkpoint_path)
     classifier.load_state_dict(classifier_checkpoint['model_state_dict'])
     classifier.eval()
@@ -250,28 +252,38 @@ while True:
         # plt.show()
 
         # Camera Intrinsic parameters
-        fx = 2327.564263511396
-        fy = 2327.564263511396
-        cx = 720.5
-        cy = 540.5
-        tx = -162.92949844579772
-        ty = 0
+        fx, fy = [895.176, 895.176]
+        cx, cy = [630.254, 374.059]
+        # fx = 2327.564263511396
+        # fy = 2327.564263511396
+        # cx = 720.5
+        # cy = 540.5
+        # tx = -162.92949844579772
+        # ty = 0
         pointcloud = depth_to_pointcloud(segmented_depth_image, fx, fy, cx, cy)
         print(f"点数：{len(pointcloud)}")
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pointcloud)
         pcd.estimate_normals()
+        # o3d.visualization.draw_geometries([pcd], point_show_normal=True)
+        # pcd_filted1, idx = pcd.remove_radius_outlier(nb_points=16, radius=10)
+        # pcd, idx = pcd.remove_statistical_outlier(nb_neighbors=200, std_ratio=2.0)
+        # o3d.visualization.draw_geometries([pcd], point_show_normal=True)
+        # pcd_filted2 = pcd.select_by_index(idx)
+        # o3d.visualization.draw_geometries([pcd], point_show_normal=True)
         o3d.io.write_point_cloud(os.path.join(data_path, f"{pcdIdx}.ply"), pcd)
         pcd_normalized = o3d.geometry.PointCloud()
         # pcd.points = o3d.utility.Vector3dVector(pointcloud)
-        pts_normalized, normalized_scalse = pc_normalize(pointcloud)
+        pts_normalized, normalized_scalse = pc_normalize(np.asarray(pcd.points))
         pcd_normalized.points = o3d.utility.Vector3dVector(pts_normalized)
-        pcd_normalized.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamKNN(100))
+        pcd_normalized.estimate_normals()
+        # pcd_normalized.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamKNN(100))
         camera = [0,0,800]
         pcd_normalized.orient_normals_towards_camera_location(camera)
+        o3d.visualization.draw_geometries([pcd_normalized], point_show_normal=True)
         # o3d.io.write_point_cloud("../../../data/outputs/"+"test.ply", pcd)
-        if len(np.asarray(pcd_normalized.points)) > 2000:
-            pcd_normalized = pcd_normalized.farthest_point_down_sample(2000)
+        if len(np.asarray(pcd_normalized.points)) > 5000:
+            pcd_normalized = pcd_normalized.farthest_point_down_sample(5000)
         # o3d.visualization.draw_geometries([pcd], point_show_normal=True)
         # pcd = o3d.io.read_point_cloud("/home/niu/Downloads/BGSPCD/ellipsoid/ellipsoid_0006.ply")
         print(pointcloud.shape)

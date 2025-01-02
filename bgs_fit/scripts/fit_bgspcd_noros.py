@@ -163,7 +163,7 @@ def fit_frustum_cone_ransac(pcd):
     r1, r2, height, center = fit_frustum_cone_by_slice(points, 30)
     return r1, r2, height, SE3.Rt(R, center)
 
-def fit_frustum_cone_normal(pcd, use_poly=False):
+def fit_frustum_cone_normal(pcd, use_poly=False, plane_t=0.001, normal_t=0.02):
     pcd_normalized = o3d.geometry.PointCloud(pcd)
     pts, m, centroid = pc_normalize(np.asarray(pcd.points))
     pcd_normalized.points = o3d.utility.Vector3dVector(pts)
@@ -184,7 +184,7 @@ def fit_frustum_cone_normal(pcd, use_poly=False):
         cluster_pcd = pcd_normalized.select_by_index(cluster_indices)
         cluster_normal = np.mean(normals[cluster_indices], axis=0)
         cluster_normals_list.append(cluster_normal)
-        plane_model, plane_inliers = cluster_pcd.segment_plane(distance_threshold=0.001, ransac_n=3, num_iterations=1000)
+        plane_model, plane_inliers = cluster_pcd.segment_plane(distance_threshold=plane_t, ransac_n=3, num_iterations=1000)
         plane_normals_list.append(plane_model[:3])
         ratio = len(plane_inliers) / cluster_indices_size
         plane_points_ratio_list.append(ratio)
@@ -202,7 +202,7 @@ def fit_frustum_cone_normal(pcd, use_poly=False):
         print(f"使用估计法向量")
         cone_axis_model = ConeAxisLeastSquaresModel()
         cluster_normals_list = np.array(cluster_normals_list)
-        best_fit, _ = ransac(normals, cone_axis_model, 3, 1000, 0.02, 1, inliers_ratio=0.99, debug=False, return_all=True)
+        best_fit, best_inlier_idxs = ransac(normals, cone_axis_model, 3, 1000, normal_t, 1, inliers_ratio=0.99, debug=False, return_all=True)
         vector, best_angle = best_fit
         cone_normal = vector
     vec_x = np.cross(cone_normal, [0,0,1])
@@ -215,11 +215,175 @@ def fit_frustum_cone_normal(pcd, use_poly=False):
         r1, r2, height, center = fit_frustum_cone_by_slice_linear(points, 30)
     return r1 * m, r2 * m, height * m, SE3(centroid) * SE3(R) * SE3(np.asarray(center) * m)
 
-def fit_ellipsoid(pcd):
+def get_plane_axis(point_cloud, halfDim):
+    pts = np.asarray(point_cloud.points)
+    dist_sum_list = []
+    for idx in np.arange(3):
+        idx1, idx2 = [i for i in range(3) if i != idx]
+        corner = np.array([[halfDim[idx1], halfDim[idx2]], [-1 * halfDim[idx1], -1 * halfDim[idx2]],
+                           [-1 * halfDim[idx1], halfDim[idx2]], [halfDim[idx1], -1 * halfDim[idx2]]])
+        pts2d = np.array([pts[:, idx1], pts[:, idx2]])
+        dist_sum = 0
+        for i in range(4):
+            min_corner = min(np.linalg.norm(pts2d - corner[i].reshape(2,1), ord=2, axis=0))
+            if min_corner > halfDim[idx1] or min_corner > halfDim[idx2]: # 避免偏离情况
+                min_corner = 0
+            dist_sum += min_corner
+        print(dist_sum)
+        dist_sum_list.append(dist_sum)
+    return np.argmax(dist_sum_list)
+
+def get_max_num_cluster(pcd, eps=0.1, min_points=10, print_progress=True):
+    labels = np.array(pcd.cluster_dbscan(eps=eps, min_points=min_points, print_progress=print_progress))
+    max_label = labels.max()
+    # print(f"点云分为 {max_label + 1} 类")
+    # 统计每个簇中点的数量
+    unique_labels, counts = np.unique(labels, return_counts=True)
+    # 找到点数最多的簇
+    max_cluster_label = unique_labels[np.argmax(counts)]
+    max_cluster_indices = np.where(labels == max_cluster_label)[0]
+    max_pcd = pcd.select_by_index(max_cluster_indices)
+    return max_pcd
+
+def get_adjust_transform(pts, numPoints, halfDim, planeAxis, pcd):
+    idx1, idx2 = [i for i in range(3) if i != planeAxis]
+    top_plane_points_idx = [i for i in range(numPoints) if pts[i][planeAxis] > 0.9 * halfDim[planeAxis]]
+    if len(top_plane_points_idx) < 500:
+        top_plane_points_idx = np.argsort(pts[:, planeAxis])[-500:]
+    bottom_plane_points_idx = [i for i in range(numPoints) if pts[i][planeAxis] < -1 * 0.9 * halfDim[planeAxis]]
+    if len(bottom_plane_points_idx) < 500:
+        bottom_plane_points_idx = np.argsort(pts[:, planeAxis])[:500]
+    top_pcd = pcd.select_by_index(top_plane_points_idx)
+    top_pts = np.asarray(top_pcd.points)
+    top_pcd.paint_uniform_color(np.random.rand(3))
+    bottom_pcd = pcd.select_by_index(bottom_plane_points_idx)
+    bottom_pts = np.asarray(bottom_pcd.points)
+    bottom_pcd.paint_uniform_color(np.random.rand(3))
+    top_max_1 = np.max(top_pts[:, idx1])
+    top_min_1 = np.min(top_pts[:, idx1])
+    top_max_2 = np.max(top_pts[:, idx2])
+    top_min_2 = np.min(top_pts[:, idx2])
+    bottom_max_1 = np.max(bottom_pts[:, idx1])
+    bottom_min_1 = np.min(bottom_pts[:, idx1])
+    bottom_max_2 = np.max(bottom_pts[:, idx2])
+    bottom_min_2 = np.min(bottom_pts[:, idx2])
+    top_size_1 = abs(top_max_1 - top_min_1)
+    top_size_2 = abs(top_max_2 - top_min_2)
+    top_size_ratio = top_size_1 / top_size_2 if top_size_1 < top_size_2 else top_size_2 / top_size_1
+    top_ratio_1 = top_size_1 / (2 * halfDim[idx1])
+    top_ratio_2 = top_size_2 / (2 * halfDim[idx2])
+    bottom_size_1 = abs(bottom_max_1 - bottom_min_1)
+    bottom_size_2 = abs(bottom_max_2 - bottom_min_2)
+    bottom_size_ratio = bottom_size_1 / bottom_size_2 if bottom_size_1 < bottom_size_2 else bottom_size_2 / bottom_size_1
+    bottom_ratio_1 = bottom_size_1 / (2 * halfDim[idx1])
+    bottom_ratio_2 = bottom_size_2 / (2 * halfDim[idx2])
+
+    # print("拟合顶面圆")
+    top_cluster_pcd = get_max_num_cluster(top_pcd, 0.1, 10, True)
+    top_cluster_pts = np.asarray(top_cluster_pcd.points)
+    # print("拟合底面圆")
+    bottom_cluster_pcd = get_max_num_cluster(bottom_pcd, 0.1, 10, True)
+    bottom_cluster_pts = np.asarray(bottom_cluster_pcd.points)
+    o3d.visualization.draw_geometries([bottom_cluster_pcd, top_cluster_pcd])
+    top_circle, _, _ = fit_circle(top_cluster_pts[:, [idx1, idx2]], 1000, 0.01)
+    bottom_circle, _, _ = fit_circle(bottom_cluster_pts[:, [idx1, idx2]], 1000, 0.01)
+    if abs(top_size_ratio - 1) < 0.05:
+        center_top = np.array([0.5 * (top_max_1 + top_min_1),
+                               0.5 * (top_max_2 + top_min_2)])
+    else:
+        center_top = top_circle[0]
+    if abs(bottom_size_ratio - 1) < 0.05:
+        center_bottom = np.array([0.5 * (bottom_max_1 + bottom_min_1),
+                                  0.5 * (bottom_max_2 + bottom_min_2)])
+    else:
+        center_bottom = bottom_circle[0]
+
+    center_top = top_circle[0]
+    center_bottom = bottom_circle[0]
+    top_center = [0,0,0]
+    top_center[planeAxis] = halfDim[planeAxis]
+    top_center[idx1] = center_top[0]
+    top_center[idx2] = center_top[1]
+    bottom_center = [0,0,0]
+    bottom_center[planeAxis] = -1.0 * halfDim[planeAxis]
+    bottom_center[idx1] = center_bottom[0]
+    bottom_center[idx2] = center_bottom[1]
+
+    if abs(top_ratio_1/top_ratio_2 - 1) < 0.01 and abs(bottom_ratio_1/bottom_ratio_2 - 1) < 0.01:
+        T = SE3.Tx(0)
+    else:
+        v1 = np.asarray(top_center) - np.asarray(bottom_center)
+        v1 = v1 / np.linalg.norm(v1)
+        v2, v3 = find_orthogonal_vectors(v1)
+        if planeAxis == 0:
+            T = SE3.Rt(SO3.TwoVectors(x=v1, y=v2), 0.5 * (np.asarray(top_center) + np.asarray(bottom_center)))
+        if planeAxis == 1:
+            T = SE3.Rt(SO3.TwoVectors(x=v2, y=v1), 0.5 * (np.asarray(top_center) + np.asarray(bottom_center)))
+        if planeAxis == 2:
+            T = SE3.Rt(SO3.TwoVectors(x=v2, z=v1), 0.5 * (np.asarray(top_center) + np.asarray(bottom_center)))
+
+    # print(f"top center: {center_top}")
+    # print(f"bottom center: {center_bottom}")
+    # print(f"top norm: {np.linalg.norm(center_top)}")
+    # print(f"bottom norm: {np.linalg.norm(center_bottom)}")
+    # print(f"top size ratio: {top_size_ratio}")
+    # print(f"bottom size ratio: {bottom_size_ratio}")
+    # print(f"top ratio: {top_ratio_1}， {top_ratio_2}")
+    # print(f"bottom ratio: {bottom_ratio_1}， {bottom_ratio_2}")
+
+    top_center_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.01, resolution=100)
+    top_center_sphere.paint_uniform_color([1.0,1.0,0.0]) # Yellow
+    top_center_sphere.translate(top_center)
+    bottom_center_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.01, resolution=100)
+    bottom_center_sphere.paint_uniform_color([1.0,0.0,1.0])
+    bottom_center_sphere.translate(bottom_center)
+    # coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
+    # TobbOri = SE3.Rt(obbOri.R, obbOri.center)
+    ceter = np.asarray(top_center)
+    ceter[planeAxis] = 0
+    origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=[0, 0, 0])
+    origin_trans = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=[0, 0, 0])
+    origin_trans.transform(T)
+    # o3d.visualization.draw_geometries([aabb, top_pcd, bottom_pcd, top_center_sphere, bottom_center_sphere, origin, origin_trans])
+    top_circle_r = max(np.linalg.norm(top_pts[:, [idx1, idx2]] - np.array(top_circle[0]), ord=2, axis=1))
+    bottom_circle_r = max(np.linalg.norm(bottom_pts[:, [idx1, idx2]] - np.array(bottom_circle[0]), ord=2, axis=1))
+    # print(top_circle_r)
+    # print(bottom_circle_r)
+    # print(max(top_size_1, top_size_2)/2)
+    # print(max(bottom_size_1, bottom_size_2)/2)
+
+    if top_circle_r > max(top_size_1, top_size_2)/2 and top_circle[1] < max(halfDim)*1.2:
+        top_r = top_circle_r
+    else:
+        top_r = max(top_size_1, top_size_2)/2
+    if bottom_circle_r > max(bottom_size_1, bottom_size_2)/2 and bottom_circle[1] < max(halfDim)*1.2:
+        bottom_r = bottom_circle_r
+    else:
+        bottom_r = max(bottom_size_1, bottom_size_2)/2
+    return T, top_r, bottom_r
+
+def fit_frustum_cone_obb(pcd):
+    pcd_fit = o3d.geometry.PointCloud()
+    pcd_fit.points = o3d.utility.Vector3dVector(np.asarray(pcd.points))
+    pts = np.asarray(pcd_fit.points)
+    obbOri = pcd_fit.get_minimal_oriented_bounding_box()
+    TobbOri = SE3.Rt(obbOri.R, obbOri.center)
+    pcd_fit.transform(TobbOri.inv())
+    halfDim = [max(pts[:, 0]), max(pts[:, 1]), max(pts[:, 2])]
+    planeAxis = get_plane_axis(pcd_fit, halfDim)
+    if planeAxis == -1:
+        print("判断平面轴方向错误")
+        return SE3(), 0, 0
+    height = halfDim[planeAxis] * 2
+    T, top_r, bottom_r = get_adjust_transform(pts, pts.shape[0], halfDim, planeAxis, pcd_fit)
+    # TODO: T is not used
+    return top_r, bottom_r, height, TobbOri
+
+def fit_ellipsoid(pcd, t=0.01):
     points, m, centroid = pc_normalize(np.asarray(pcd.points))
     num_points = len(points)
     ellipsoid_model = EllipsoidLeastSquaresModel()
-    best_fit, _ = ransac(points, ellipsoid_model, 10, 500, 0.01, 1, inliers_ratio=0.99, debug=False, return_all=True)
+    best_fit, _ = ransac(points, ellipsoid_model, 10, 500, t, 1, inliers_ratio=0.99, debug=False, return_all=True)
     params = ellipsoid_model.get_ellipsoid_params(best_fit)
     if params is not None:
         x0t, y0t, z0t, a, b, c, R = params
