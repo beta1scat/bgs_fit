@@ -22,7 +22,9 @@ def pc_normalize(pc):
 
 model_path = "../../../data/models"
 # base_path = "/root/ros_ws/src/data/saved/scatter_pll"
-base_path = "/root/ros_ws/src/data/sim/scatter_pll"
+# base_path = "/root/ros_ws/src/data/sim/scatter_pll"
+base_path = "/root/ros_ws/src/data/00000"
+
 pcd_path = os.path.join(base_path, "pcd")
 fit_pcd_path = os.path.join(base_path, "fit")
 class_path = os.path.join(base_path, "classes")
@@ -41,14 +43,16 @@ classifier.eval()
 files = sorted(os.listdir(pcd_path))
 for file in files:
     isOK = False
-    # if file != "0_4.ply":
-    #     continue
+    if file != "0_4.ply":
+        continue
     while not isOK:
         print(file)
         fileName, suffix = file.split('.')
         if suffix == "txt":
             continue
         pcd = o3d.io.read_point_cloud(os.path.join(pcd_path, file))
+        cl, ind = pcd.remove_statistical_outlier(nb_neighbors=100, std_ratio=2.0)
+        pcd = pcd.select_by_index(ind)
         pcd_normalized = o3d.geometry.PointCloud()
         # pcd.points = o3d.utility.Vector3dVector(pointcloud)
         pts_normalized, normalized_scalse = pc_normalize(np.asarray(pcd.points))
@@ -57,10 +61,11 @@ for file in files:
         # pcd_normalized.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamKNN(100))
         camera = [0,0,800]
         pcd_normalized.orient_normals_towards_camera_location(camera)
-        o3d.visualization.draw_geometries([pcd_normalized], point_show_normal=True)
         # o3d.io.write_point_cloud("../../../data/outputs/"+"test.ply", pcd)
         if len(np.asarray(pcd_normalized.points)) > 5000:
             pcd_normalized = pcd_normalized.farthest_point_down_sample(5000)
+        o3d.visualization.draw_geometries([pcd_normalized], point_show_normal=True)
+
         # o3d.visualization.draw_geometries([pcd], point_show_normal=True)
         # pcd = o3d.io.read_point_cloud("/home/niu/Downloads/BGSPCD/ellipsoid/ellipsoid_0006.ply")
         points = torch.from_numpy(np.asarray(pcd_normalized.points))
@@ -108,7 +113,7 @@ for file in files:
             o3d.io.write_point_cloud(os.path.join(fit_pcd_path, f"{fileName}.ply"), fit_cube_pcd)
         elif realClass == '1':
             # r1, r2, height, T_cone = fit_frustum_cone_normal(pcd_fit, plane_t=0.001, normal_t=0.02)
-            r1, r2, height, T_cone = fit_frustum_cone_normal(pcd_fit, plane_t=0.01, normal_t=0.5)
+            r1, r2, height, T_cone = fit_frustum_cone_normal(pcd_fit, plane_t=0.01, normal_t=0.02)
             fit_cone_points = generate_cone_points(r_bottom=r2, r_top_ratio=r1/r2, height=height, delta=0.0, points_density=0, total_points=5000)
             fit_cone_pcd = o3d.geometry.PointCloud()
             fit_cone_pcd.points = o3d.utility.Vector3dVector(fit_cone_points)

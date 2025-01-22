@@ -73,7 +73,7 @@ classifier.eval()
 
 # base_path = "/root/ros_ws/src/data/saved/scatter_pll"
 # base_path = "/root/ros_ws/src/data/sim/scatter_pll"
-base_path = "/root/ros_ws/src/data/sim_20250121"
+base_path = "/root/ros_ws/src/data/sim_flat"
 # # Sim Camera Intrinsic parameters
 fx = 2327.564263511396
 fy = 2327.564263511396
@@ -106,28 +106,32 @@ for file in files:
         print(f"image size: {image.shape}")
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         depth_image = cv2.imread(os.path.join(depth_path, fileName + ".tiff"), cv2.IMREAD_UNCHANGED)
-        click_positions = []
+        # click_positions = []
         image_bak = image.copy()
-        cv2.imshow("Image with Clicks", image)    # 创建一个窗口并设置鼠标回调函数
-        # depth_display = cv2.normalize(depth_image, None, 0, 255.0, cv2.NORM_MINMAX)
-        # depth_display = np.uint8(depth_display)
-        # cv2.imshow("depth", depth_display)    # 显示深度图
-        cv2.setMouseCallback("Image with Clicks", mouse_callback, [image, image_bak, click_positions])
-        cv2.waitKey(0) # 等待用户按键，按任意键退出
-        cv2.destroyAllWindows()    # 关闭窗口
-        if not click_positions:
+        # 使用 selectROI 在缩小后的图像上选择 ROI
+        cv2.namedWindow("ROI", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow("ROI", 1280, 800)
+        roi = cv2.selectROI("ROI", image_bak)
+        cv2.destroyWindow("ROI")
+        if roi == (0, 0, 0, 0):
+            print("No box was drawn.")
             break
+        # 获取缩小后选择的 ROI 坐标
+        x, y, w, h = roi
+
+        # # 将 ROI 坐标转换回原始图像的坐标
+        # x = int(x)
+        # y = int(y)
+        # w = int(w)
+        # h = int(h)
+        input_box = np.array([x, y, x + w, y + h])
         # 使用框提示进行分割
         predictor.set_image(image_rgb)
-        input_point = np.array(click_positions)
-        input_label = np.array(range(1, len(click_positions) + 1))
-        print(input_point)
-        print(input_label)
         masks, scores, logits = predictor.predict(
-            point_coords=input_point,
-            point_labels=input_label,
+            box=input_box[None, :],  # 需要增加一个维度来匹配输入形状
             multimask_output=False  # 如果为 True，将返回多个可能的分割结果
         )
+
         print(masks)
         # 选择分割结果，并展示
         mask = masks[0]
@@ -140,8 +144,8 @@ for file in files:
         plt.figure(figsize=(10, 10))
         plt.subplot(1, 3, 1)
         plt.imshow(image_rgb)
-        plt.gca().add_patch(plt.Circle(click_positions[0], 5,
-                                        edgecolor='red', facecolor='none', lw=2))
+        # plt.gca().add_patch(plt.Circle(click_positions[0], 5,
+        #                                 edgecolor='red', facecolor='none', lw=2))
         plt.title("Original Image with Box")
 
         plt.subplot(1, 3, 2)

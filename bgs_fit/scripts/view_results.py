@@ -1,8 +1,9 @@
 import os
 import open3d as o3d
 
-base_path = "/root/ros_ws/src/data/saved/scatter_pll"
+# base_path = "/root/ros_ws/src/data/saved/scatter_pll"
 # base_path = "/root/ros_ws/src/data/sim/scatter_pll"
+base_path = "/root/ros_ws/src/data/00000"
 pcd_path = os.path.join(base_path, "pcd")
 fit_pcd_path = os.path.join(base_path, "fit")
 
