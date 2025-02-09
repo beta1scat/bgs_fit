@@ -23,7 +23,8 @@ def pc_normalize(pc):
 model_path = "../../../data/models"
 # base_path = "/root/ros_ws/src/data/saved/scatter_pll"
 # base_path = "/root/ros_ws/src/data/sim/scatter_pll"
-base_path = "/root/ros_ws/src/data/00000"
+# base_path = "/root/ros_ws/src/data/00000"
+base_path = "/root/ros_ws/src/data/sim_flat"
 
 pcd_path = os.path.join(base_path, "pcd")
 fit_pcd_path = os.path.join(base_path, "fit")
@@ -41,10 +42,12 @@ classifier.load_state_dict(classifier_checkpoint['model_state_dict'])
 classifier.eval()
 
 files = sorted(os.listdir(pcd_path))
+start_idx = np.where(np.array(files) == '8_4.ply')[0]
+files = files[start_idx[0]:]
 for file in files:
     isOK = False
-    if file != "0_4.ply":
-        continue
+    # if file != "0_4.ply":
+    #     continue
     while not isOK:
         print(file)
         fileName, suffix = file.split('.')
@@ -91,11 +94,13 @@ for file in files:
         realClass = input("Real class is: ")
         # np.savetxt(os.path.join(class_path, f"{fileName}.txt"), np.array([pred_choice.item(), int(realClass)]), fmt="%.0e")
         if len(pcd.points) > 5000:
-            pcd_fps = pcd.farthest_point_down_sample(5000)
-            cl, ind = pcd_fps.remove_statistical_outlier(nb_neighbors=50, std_ratio=2.0)
-            pcd_fit = pcd_fps.select_by_index(ind)
+            pcd_fit = pcd.farthest_point_down_sample(5000)
+            # cl, ind = pcd_fps.remove_statistical_outlier(nb_neighbors=100, std_ratio=2.0)
+            # pcd_fit = pcd_fps.select_by_index(ind)
         else:
             pcd_fit = pcd
+        o3d.visualization.draw_geometries([pcd_fit], point_show_normal=True)
+
         if realClass == '0':
             a,b,c,T_cube = fit_cuboid_obb(pcd_fit)
             coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
@@ -113,7 +118,7 @@ for file in files:
             o3d.io.write_point_cloud(os.path.join(fit_pcd_path, f"{fileName}.ply"), fit_cube_pcd)
         elif realClass == '1':
             # r1, r2, height, T_cone = fit_frustum_cone_normal(pcd_fit, plane_t=0.001, normal_t=0.02)
-            r1, r2, height, T_cone = fit_frustum_cone_normal(pcd_fit, plane_t=0.01, normal_t=0.02)
+            r1, r2, height, T_cone = fit_frustum_cone_normal(pcd_fit, plane_t=0.01, normal_t=0.02, use_plane_normal=True)
             fit_cone_points = generate_cone_points(r_bottom=r2, r_top_ratio=r1/r2, height=height, delta=0.0, points_density=0, total_points=5000)
             fit_cone_pcd = o3d.geometry.PointCloud()
             fit_cone_pcd.points = o3d.utility.Vector3dVector(fit_cone_points)
@@ -143,6 +148,21 @@ for file in files:
             o3d.io.write_point_cloud(os.path.join(fit_pcd_path, f"{fileName}.ply"), fit_ellipsoid_pcd)
         elif realClass == '11':
             r1, r2, height, T_cone = fit_frustum_cone_obb(pcd_fit)
+            fit_cone_points = generate_cone_points(r_bottom=r2, r_top_ratio=r1/r2, height=height, delta=0.0, points_density=0, total_points=5000)
+            fit_cone_pcd = o3d.geometry.PointCloud()
+            fit_cone_pcd.points = o3d.utility.Vector3dVector(fit_cone_points)
+            fit_cone_pcd.paint_uniform_color([0, 0, 1])
+            fit_cone_pcd.transform(T_cone)
+            coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=[0, 0, 0])
+            coord_frame.transform(T_cone)
+            coord_frame_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
+            o3d.visualization.draw_geometries([fit_cone_pcd, pcd, coord_frame, coord_frame_origin], point_show_normal=False)
+            with open(os.path.join(class_path, f"{fileName}.json"), "w") as outfile:
+                json.dump({"pred_type": pred_choice.item(), "input_type": int(realClass), "size": [r1, r2, height], "T": T_cone.A.tolist()}, outfile)
+            o3d.io.write_point_cloud(os.path.join(fit_pcd_path, f"{fileName}.ply"), fit_cone_pcd)
+        elif realClass == '12':
+            # r1, r2, height, T_cone = fit_frustum_cone_normal(pcd_fit, plane_t=0.001, normal_t=0.02)
+            r1, r2, height, T_cone = fit_frustum_cone_normal(pcd_fit, plane_t=0.01, normal_t=0.02, use_plane_normal=False)
             fit_cone_points = generate_cone_points(r_bottom=r2, r_top_ratio=r1/r2, height=height, delta=0.0, points_density=0, total_points=5000)
             fit_cone_pcd = o3d.geometry.PointCloud()
             fit_cone_pcd.points = o3d.utility.Vector3dVector(fit_cone_points)
