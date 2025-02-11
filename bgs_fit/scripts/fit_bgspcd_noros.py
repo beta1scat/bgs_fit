@@ -14,6 +14,63 @@ from sklearn.linear_model import LinearRegression
 from utils import *
 from generatePickPoses import *
 
+def align_vector_to_z(v):
+    """ 生成一个旋转矩阵，使 Z 轴对齐到向量 v """
+    v = np.array(v, dtype=np.float64)
+    v = v / np.linalg.norm(v)  # 归一化
+
+    # 选择辅助向量，确保它与 v 不共线
+    if np.abs(v[0]) < np.abs(v[1]):
+        aux = np.array([1, 0, 0], dtype=np.float64)
+    else:
+        aux = np.array([0, 1, 0], dtype=np.float64)
+
+    # 计算 X 轴
+    x_axis = np.cross(aux, v)
+    x_axis /= np.linalg.norm(x_axis)
+
+    # 计算 Y 轴
+    y_axis = np.cross(v, x_axis)
+
+    # 旋转矩阵
+    R = np.column_stack((x_axis, y_axis, v))  # R = [X' Y' Z']
+    return R
+
+def fit_cuboid_obb2(pcd, dist_threshold=0.001, n=3, num_it=500):
+    '''
+        Fit cuboid by "Oriented Bounding Box"
+    Params:
+    - pcd: input point cloud
+    Return:
+    - a: side length along X axis
+    - b: side length along Y axis
+    - c: side length along Z axis
+    - T: rigid transform of the cuboid
+    '''
+    plane_model, inliers = pcd.segment_plane(distance_threshold=dist_threshold, ransac_n=n, num_iterations=num_it)
+    remained_cloud = pcd.select_by_index(inliers, invert=True)
+    remained_cloud.paint_uniform_color([0, 1, 0])
+    plane_cloud = pcd.select_by_index(inliers)
+    plane_cloud.paint_uniform_color([1, 1, 0])
+    plane_model2, inliers2 = remained_cloud.segment_plane(distance_threshold=dist_threshold, ransac_n=n, num_iterations=num_it)
+    # o3d.visualization.draw_geometries([plane_cloud, remained_cloud], point_show_normal=True)
+    v1 = plane_model[:3]
+    v2 = plane_model2[:3]
+    v1 = v1 / np.linalg.norm(v1)
+    v2 = v2 / np.linalg.norm(v2)
+    R = SO3.TwoVectors(v1, v2)
+    pcd_transed = o3d.geometry.PointCloud()
+    pcd_transed.points = o3d.utility.Vector3dVector(pcd.points)
+    pcd_transed.rotate(R.inv(), [0,0,0])
+    aabb = pcd_transed.get_axis_aligned_bounding_box()
+    aabb.color = [0,0,1]
+    a, b, c = aabb.get_half_extent()
+    cube_center = SO3(R) * aabb.get_center()
+    T = SE3.Rt(R, cube_center)
+    coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
+    # o3d.visualization.draw_geometries([pcd_transed, aabb, coord_frame], point_show_normal=True)
+    return a, b, c, T
+
 def fit_cuboid_obb(pcd):
     '''
         Fit cuboid by "Oriented Bounding Box"
@@ -163,7 +220,7 @@ def fit_frustum_cone_ransac(pcd):
     r1, r2, height, center = fit_frustum_cone_by_slice(points, 30)
     return r1, r2, height, SE3.Rt(R, center)
 
-def fit_frustum_cone_normal(pcd, use_poly=False, plane_t=0.001, normal_t=0.02):
+def fit_frustum_cone_normal(pcd, use_poly=False, plane_t=0.001, normal_t=0.02, use_plane_normal=True):
     pcd_normalized = o3d.geometry.PointCloud(pcd)
     pts, m, centroid = pc_normalize(np.asarray(pcd.points))
     pcd_normalized.points = o3d.utility.Vector3dVector(pts)
@@ -194,7 +251,9 @@ def fit_frustum_cone_normal(pcd, use_poly=False, plane_t=0.001, normal_t=0.02):
         # plane_pcd.paint_uniform_color([1,0,0])
         # o3d.visualization.draw_geometries([cluster_pcd, plane_pcd], window_name='Classified Point Clouds', point_show_normal=True)
     print(plane_points_ratio_list)
-    if np.max(plane_points_ratio_list) > 0.7 and len([x for x in plane_points_ratio_list if x > 0.7]) < 3:
+    # if np.max(plane_points_ratio_list) > 0.7 and len([x for x in plane_points_ratio_list if x > 0.7]) < 3:
+    if use_plane_normal:
+    # if np.max(plane_points_ratio_list) > 0.7:
         print(f"使用平面法向量")
         max_plane_ratio_idx = np.argmax(plane_points_ratio_list)
         cone_normal = plane_normals_list[max_plane_ratio_idx]
@@ -202,7 +261,7 @@ def fit_frustum_cone_normal(pcd, use_poly=False, plane_t=0.001, normal_t=0.02):
         print(f"使用估计法向量")
         cone_axis_model = ConeAxisLeastSquaresModel()
         cluster_normals_list = np.array(cluster_normals_list)
-        best_fit, best_inlier_idxs = ransac(normals, cone_axis_model, 3, 1000, normal_t, 1, inliers_ratio=0.99, debug=False, return_all=True)
+        best_fit, best_inlier_idxs = ransac(normals, cone_axis_model, 10, 1000, normal_t, 1, inliers_ratio=0.9, debug=False, return_all=True)
         vector, best_angle = best_fit
         cone_normal = vector
     vec_x = np.cross(cone_normal, [0,0,1])
@@ -383,7 +442,7 @@ def fit_ellipsoid(pcd, t=0.01):
     points, m, centroid = pc_normalize(np.asarray(pcd.points))
     num_points = len(points)
     ellipsoid_model = EllipsoidLeastSquaresModel()
-    best_fit, _ = ransac(points, ellipsoid_model, 10, 500, t, 1, inliers_ratio=0.99, debug=False, return_all=True)
+    best_fit, _ = ransac(points, ellipsoid_model, 10, 500, t, 1, inliers_ratio=0.9, debug=False, return_all=True)
     params = ellipsoid_model.get_ellipsoid_params(best_fit)
     if params is not None:
         x0t, y0t, z0t, a, b, c, R = params
